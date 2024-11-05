@@ -28,38 +28,30 @@ var (
 )
 
 func getTargetZones() []string {
-	var zoneIDs []string
-
 	if len(cfgZones) > 0 {
-		zoneIDs = strings.Split(cfgZones, ",")
-	} else {
-		// deprecated
-		for _, e := range os.Environ() {
-			if strings.HasPrefix(e, "ZONE_") {
-				split := strings.SplitN(e, "=", 2)
-				zoneIDs = append(zoneIDs, split[1])
-			}
+		return strings.Split(cfgZones, ",")
+	}
+	var zoneIDs []string
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "ZONE_") {
+			zoneIDs = append(zoneIDs, strings.SplitN(e, "=", 2)[1])
 		}
 	}
 	return zoneIDs
 }
 
 func getExcludedZones() []string {
-	var zoneIDs []string
-
 	if len(cfgExcludeZones) > 0 {
-		zoneIDs = strings.Split(cfgExcludeZones, ",")
+		return strings.Split(cfgExcludeZones, ",")
 	}
-	return zoneIDs
+	return nil
 }
 
 func filterZones(all []cloudflare.Zone, target []string) []cloudflare.Zone {
-	var filtered []cloudflare.Zone
-
-	if (len(target)) == 0 {
+	if len(target) == 0 {
 		return all
 	}
-
+	var filtered []cloudflare.Zone
 	for _, tz := range target {
 		for _, z := range all {
 			if tz == z.ID {
@@ -68,7 +60,6 @@ func filterZones(all []cloudflare.Zone, target []string) []cloudflare.Zone {
 			}
 		}
 	}
-
 	return filtered
 }
 
@@ -82,12 +73,10 @@ func contains(s []string, e string) bool {
 }
 
 func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Zone {
-	var filtered []cloudflare.Zone
-
-	if (len(exclude)) == 0 {
+	if len(exclude) == 0 {
 		return all
 	}
-
+	var filtered []cloudflare.Zone
 	for _, z := range all {
 		if contains(exclude, z.ID) {
 			log.Info("Exclude zone: ", z.ID, " ", z.Name)
@@ -95,7 +84,6 @@ func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Z
 			filtered = append(filtered, z)
 		}
 	}
-
 	return filtered
 }
 
@@ -116,7 +104,6 @@ func fetchMetrics() {
 		if len(filteredZones) < cfgBatchSize {
 			sliceLength = len(filteredZones)
 		}
-
 		targetZones := filteredZones[:sliceLength]
 		filteredZones = filteredZones[len(targetZones):]
 
@@ -129,7 +116,7 @@ func fetchMetrics() {
 }
 
 func main() {
-	flag.StringVar(&cfgListen, "listen", cfgListen, "listen on addr:port ( default :8080), omit addr to listen on all interfaces")
+	flag.StringVar(&cfgListen, "listen", cfgListen, "listen on addr:port (default :8080), omit addr to listen on all interfaces")
 	flag.StringVar(&cfgMetricsPath, "metrics_path", cfgMetricsPath, "path for metrics, default /metrics")
 	flag.StringVar(&cfgCfAPIKey, "cf_api_key", cfgCfAPIKey, "cloudflare api key, works with api_email flag")
 	flag.StringVar(&cfgCfAPIEmail, "cf_api_email", cfgCfAPIEmail, "cloudflare api email, works with api_key flag")
@@ -140,25 +127,25 @@ func main() {
 	flag.IntVar(&cfgBatchSize, "cf_batch_size", cfgBatchSize, "cloudflare zones batch size (1-10), defaults to 10")
 	flag.BoolVar(&cfgFreeTier, "free_tier", cfgFreeTier, "scrape only metrics included in free plan")
 	flag.Parse()
+
 	if !(len(cfgCfAPIToken) > 0 || (len(cfgCfAPIEmail) > 0 && len(cfgCfAPIKey) > 0)) {
 		log.Fatal("Please provide CF_API_KEY+CF_API_EMAIL or CF_API_TOKEN")
 	}
 	if cfgBatchSize < 1 || cfgBatchSize > 10 {
 		log.Fatal("CF_BATCH_SIZE must be between 1 and 10")
 	}
-	customFormatter := new(log.TextFormatter)
-	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
-	log.SetFormatter(customFormatter)
-	customFormatter.FullTimestamp = true
+
+	log.SetFormatter(&log.TextFormatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		FullTimestamp:   true,
+	})
 
 	go func() {
-		for ; true; <-time.NewTicker(60 * time.Second).C {
+		for range time.NewTicker(60 * time.Second).C {
 			go fetchMetrics()
 		}
 	}()
 
-	//This section will start the HTTP server and expose
-	//any metrics on the /metrics endpoint.
 	if !strings.HasPrefix(cfgMetricsPath, "/") {
 		cfgMetricsPath = "/" + cfgMetricsPath
 	}
