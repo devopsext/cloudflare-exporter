@@ -212,7 +212,18 @@ func fetchZones() []cloudflare.Zone {
 		log.Fatal(err)
 	}
 
-	return z
+	if !cfgBusinessTier {
+		return z
+	}
+
+	subscribedZones := make([]cloudflare.Zone, 0)
+	for _, zone := range z {
+		if zone.Plan.IsSubscribed {
+			subscribedZones = append(subscribedZones, zone)
+		}
+	}
+
+	return subscribedZones
 }
 
 func fetchAccounts() []cloudflare.Account {

@@ -24,6 +24,7 @@ var (
 	cfgExcludeZones = ""
 	cfgScrapeDelay  = 300
 	cfgFreeTier     = false
+	cfgBusinessTier = true
 	cfgBatchSize    = 10
 )
 
@@ -126,6 +127,7 @@ func main() {
 	flag.IntVar(&cfgScrapeDelay, "scrape_delay", cfgScrapeDelay, "scrape delay in seconds, defaults to 300")
 	flag.IntVar(&cfgBatchSize, "cf_batch_size", cfgBatchSize, "cloudflare zones batch size (1-10), defaults to 10")
 	flag.BoolVar(&cfgFreeTier, "free_tier", cfgFreeTier, "scrape only metrics included in free plan")
+	flag.BoolVar(&cfgBusinessTier, "business_tier", cfgBusinessTier, "scrape only metrics included in business plan")
 	flag.Parse()
 
 	if !(len(cfgCfAPIToken) > 0 || (len(cfgCfAPIEmail) > 0 && len(cfgCfAPIKey) > 0)) {
