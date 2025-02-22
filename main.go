@@ -39,7 +39,6 @@ var (
 // 	cfgExcludeZones    = ""
 // 	cfgScrapeDelay     = 300
 // 	cfgFreeTier        = false
-// 	cfgBatchSize       = 10
 // 	cfgMetricsDenylist = ""
 // )
 
@@ -171,9 +170,6 @@ func runExpoter() {
 	if !(len(viper.GetString("cf_api_token")) > 0 || (len(viper.GetString("cf_api_email")) > 0 && len(viper.GetString("cf_api_key")) > 0)) {
 		log.Fatal("Please provide CF_API_KEY+CF_API_EMAIL or CF_API_TOKEN")
 	}
-	if viper.GetInt("cf_batch_size") < 1 || viper.GetInt("cf_batch_size") > 10 {
-		log.Fatal("CF_BATCH_SIZE must be between 1 and 10")
-	}
 
 	metricsDenylist := []string{}
 	if len(viper.GetString("metrics_denylist")) > 0 {
@@ -253,10 +249,6 @@ func main() {
 	flags.Int("scrape_delay", 300, "scrape delay in seconds, defaults to 300")
 	viper.BindEnv("scrape_delay")
 	viper.SetDefault("scrape_delay", 300)
-
-	flags.Int("cf_batch_size", 10, "cloudflare zones batch size (1-10), defaults to 10")
-	viper.BindEnv("cf_batch_size")
-	viper.SetDefault("cf_batch_size", 10)
 
 	flags.Bool("free_tier", false, "scrape only metrics included in free plan")
 	viper.BindEnv("free_tier")
