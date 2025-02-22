@@ -9,6 +9,7 @@ import (
 
 	cf "github.com/cloudflare/cloudflare-go/v4"
 	cfaccounts "github.com/cloudflare/cloudflare-go/v4/accounts"
+	cfload_balancers "github.com/cloudflare/cloudflare-go/v4/load_balancers"
 	cfrulesets "github.com/cloudflare/cloudflare-go/v4/rulesets"
 	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
 	"github.com/machinebox/graphql"
@@ -266,6 +267,22 @@ type lbResp struct {
 	} `json:"loadBalancingRequestsAdaptive"`
 
 	ZoneTag string `json:"zoneTag"`
+}
+
+func fetchLoadblancerPools(account cfaccounts.Account) []cfload_balancers.Pool {
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+	pools, err := cfclient.LoadBalancers.Pools.List(
+		ctx,
+		cfload_balancers.PoolListParams{
+			AccountID: cf.F(account.ID),
+		})
+	if err != nil {
+		log.Error(err)
+		return nil
+	}
+
+	return pools.Result
 }
 
 func fetchZones(accounts []cfaccounts.Account) []cfzones.Zone {

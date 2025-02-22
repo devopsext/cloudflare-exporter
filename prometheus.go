@@ -50,6 +50,7 @@ const (
 	workerDurationMetricName                     MetricName = "cloudflare_worker_duration"
 	poolHealthStatusMetricName                   MetricName = "cloudflare_zone_pool_health_status"
 	poolRequestsTotalMetricName                  MetricName = "cloudflare_zone_pool_requests_total"
+	poolOriginHealthStatusMetricName             MetricName = "cloudflare_pool_origin_health_status"
 	logpushFailedJobsAccountMetricName           MetricName = "cloudflare_logpush_failed_jobs_account_count"
 	logpushFailedJobsZoneMetricName              MetricName = "cloudflare_logpush_failed_jobs_zone_count"
 )
@@ -242,6 +243,13 @@ var (
 		[]string{"zone", "account", "load_balancer_name", "pool_name"},
 	)
 
+	poolOriginHealthStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: poolOriginHealthStatusMetricName.String(),
+		Help: "Reports the origin health of a pool, 1 for healthy, 0 for unhealthy.",
+	},
+		[]string{"account", "pool_name", "origin_name", "ip"},
+	)
+
 	poolRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: poolRequestsTotalMetricName.String(),
 		Help: "Requests per pool",
@@ -296,6 +304,7 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(workerCPUTimeMetricName)
 	allMetricsSet.Add(workerDurationMetricName)
 	allMetricsSet.Add(poolHealthStatusMetricName)
+	allMetricsSet.Add(poolOriginHealthStatusMetricName)
 	allMetricsSet.Add(poolRequestsTotalMetricName)
 	allMetricsSet.Add(logpushFailedJobsAccountMetricName)
 	allMetricsSet.Add(logpushFailedJobsZoneMetricName)
@@ -402,6 +411,9 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(poolHealthStatusMetricName) {
 		prometheus.MustRegister(poolHealthStatus)
 	}
+	if !deniedMetrics.Has(poolOriginHealthStatusMetricName) {
+		prometheus.MustRegister(poolOriginHealthStatus)
+	}
 	if !deniedMetrics.Has(poolRequestsTotalMetricName) {
 		prometheus.MustRegister(poolRequestsTotal)
 	}
@@ -411,6 +423,42 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(logpushFailedJobsZoneMetricName) {
 		prometheus.MustRegister(logpushFailedJobsZone)
 	}
+}
+
+func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	pools := fetchLoadblancerPools(account)
+	if pools == nil {
+		return
+	}
+
+	for _, pool := range pools {
+		if !pool.Enabled { // not enabled, no health values
+			continue
+		}
+		if pool.Monitor == "" { // No monitor, no health values
+			continue
+		}
+		for _, o := range pool.Origins {
+			if !o.Enabled { // not enabled, no health values
+				continue
+			}
+			healthy := 1 // Assume healthy
+			if o.JSON.ExtraFields["healthy"].Raw() == "false" {
+				healthy = 0 // Unhealthy
+			}
+			poolOriginHealthStatus.With(
+				prometheus.Labels{
+					"account":     account.Name,
+					"pool_name":   pool.Name,
+					"origin_name": o.Name,
+					"ip":          o.Address,
+				}).Set(float64(healthy))
+		}
+	}
+
 }
 
 func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {

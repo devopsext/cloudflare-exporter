@@ -122,6 +122,7 @@ func fetchMetrics() {
 	for _, a := range accounts {
 		go fetchWorkerAnalytics(a, &wg)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
+		go fetchLoadblancerPoolsHealth(a, &wg)
 	}
 
 	zones := fetchZones(accounts)
@@ -267,7 +268,7 @@ func main() {
 
 	flags.String("log_level", "", "log level")
 	viper.BindEnv("log_level")
-	viper.SetDefault("log_level", "info")
+	viper.SetDefault("log_level", "error")
 
 	viper.BindPFlags(flags)
 
