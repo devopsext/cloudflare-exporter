@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -12,8 +13,20 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	cloudflare "github.com/cloudflare/cloudflare-go"
-	log "github.com/sirupsen/logrus"
+	cf "github.com/cloudflare/cloudflare-go/v4"
+	cfoption "github.com/cloudflare/cloudflare-go/v4/option"
+	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
+	"github.com/sirupsen/logrus"
+)
+
+const (
+	cfgraphqlreqlimit = 10 // 10 is the maximum amount of zones you can request at once
+)
+
+var (
+	cfclient  *cf.Client
+	cftimeout = 10 * time.Second
+	log       = logrus.New()
 )
 
 // var (
@@ -56,8 +69,8 @@ func getExcludedZones() []string {
 	return zoneIDs
 }
 
-func filterZones(all []cloudflare.Zone, target []string) []cloudflare.Zone {
-	var filtered []cloudflare.Zone
+func filterZones(all []cfzones.Zone, target []string) []cfzones.Zone {
+	var filtered []cfzones.Zone
 
 	if (len(target)) == 0 {
 		return all
@@ -84,8 +97,8 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Zone {
-	var filtered []cloudflare.Zone
+func filterExcludedZones(all []cfzones.Zone, exclude []string) []cfzones.Zone {
+	var filtered []cfzones.Zone
 
 	if (len(exclude)) == 0 {
 		return all
@@ -104,30 +117,39 @@ func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Z
 
 func fetchMetrics() {
 	var wg sync.WaitGroup
-	zones := fetchZones()
 	accounts := fetchAccounts()
-	filteredZones := filterExcludedZones(filterZones(zones, getTargetZones()), getExcludedZones())
 
 	for _, a := range accounts {
 		go fetchWorkerAnalytics(a, &wg)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
 	}
 
-	// Make requests in groups of cfgBatchSize to avoid rate limit
-	// 10 is the maximum amount of zones you can request at once
-	for len(filteredZones) > 0 {
-		sliceLength := viper.GetInt("cf_batch_size")
-		if len(filteredZones) < viper.GetInt("cf_batch_size") {
-			sliceLength = len(filteredZones)
+	zones := fetchZones(accounts)
+	tzones := getTargetZones()
+	fzones := filterZones(zones, tzones)
+	ezones := getExcludedZones()
+	filteredZones := filterExcludedZones(fzones, ezones)
+	if !viper.GetBool("free_tier") {
+		filteredZones = filterNonFreePlanZones(filteredZones)
+	}
+
+	zoneCount := len(filteredZones)
+	if zoneCount > 0 && zoneCount <= cfgraphqlreqlimit {
+		go fetchZoneAnalytics(filteredZones, &wg)
+		go fetchZoneColocationAnalytics(filteredZones, &wg)
+		go fetchLoadBalancerAnalytics(filteredZones, &wg)
+		go fetchLogpushAnalyticsForZone(filteredZones, &wg)
+	} else if zoneCount > cfgraphqlreqlimit {
+		for s := 0; s < zoneCount; s += cfgraphqlreqlimit {
+			e := s + cfgraphqlreqlimit
+			if e > zoneCount {
+				e = zoneCount
+			}
+			go fetchZoneAnalytics(filteredZones[s:e], &wg)
+			go fetchZoneColocationAnalytics(filteredZones[s:e], &wg)
+			go fetchLoadBalancerAnalytics(filteredZones[s:e], &wg)
+			go fetchLogpushAnalyticsForZone(filteredZones[s:e], &wg)
 		}
-
-		targetZones := filteredZones[:sliceLength]
-		filteredZones = filteredZones[len(targetZones):]
-
-		go fetchZoneAnalytics(targetZones, &wg)
-		go fetchZoneColocationAnalytics(targetZones, &wg)
-		go fetchLoadBalancerAnalytics(targetZones, &wg)
-		go fetchLogpushAnalyticsForZone(targetZones, &wg)
 	}
 
 	wg.Wait()
@@ -151,10 +173,6 @@ func runExpoter() {
 	if viper.GetInt("cf_batch_size") < 1 || viper.GetInt("cf_batch_size") > 10 {
 		log.Fatal("CF_BATCH_SIZE must be between 1 and 10")
 	}
-	customFormatter := new(log.TextFormatter)
-	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
-	log.SetFormatter(customFormatter)
-	customFormatter.FullTimestamp = true
 
 	metricsDenylist := []string{}
 	if len(viper.GetString("metrics_denylist")) > 0 {
@@ -247,6 +265,47 @@ func main() {
 	viper.BindEnv("metrics_denylist")
 	viper.SetDefault("metrics_denylist", "")
 
+	flags.String("log_level", "", "log level")
+	viper.BindEnv("log_level")
+	viper.SetDefault("log_level", "info")
+
 	viper.BindPFlags(flags)
+
+	logLevel := viper.GetString("log_level")
+	if logLevel == "debug" {
+		log.Level = logrus.DebugLevel
+		log.SetReportCaller(true)
+	} else if logLevel == "warn" {
+		log.Level = logrus.WarnLevel
+	} else if logLevel == "error" {
+		log.Level = logrus.ErrorLevel
+		log.SetReportCaller(true)
+	} else {
+		log.Level = logrus.InfoLevel
+	}
+
+	log.SetFormatter(&logrus.TextFormatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		FullTimestamp:   true,
+		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+			funcPath := strings.Split(f.File, "/")
+			file := funcPath[len(funcPath)-1]
+			return file, f.Function
+		},
+	})
+
+	if len(viper.GetString("cf_api_token")) > 0 {
+		cfclient = cf.NewClient(
+			cfoption.WithAPIToken(viper.GetString("cf_api_token")),
+			cfoption.WithRequestTimeout(cftimeout*2),
+		)
+	} else {
+		cfclient = cf.NewClient(
+			cfoption.WithAPIKey(viper.GetString("cf_api_key")),
+			cfoption.WithAPIEmail(viper.GetString("cf_api_email")),
+			cfoption.WithRequestTimeout(cftimeout*2),
+		)
+	}
 	cmd.Execute()
+
 }

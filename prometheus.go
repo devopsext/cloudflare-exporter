@@ -7,7 +7,8 @@ import (
 	"sync"
 
 	"github.com/biter777/countries"
-	cloudflare "github.com/cloudflare/cloudflare-go"
+	cfaccounts "github.com/cloudflare/cloudflare-go/v4/accounts"
+	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/viper"
 )
@@ -412,7 +413,7 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	}
 }
 
-func fetchWorkerAnalytics(account cloudflare.Account, wg *sync.WaitGroup) {
+func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -440,7 +441,7 @@ func fetchWorkerAnalytics(account cloudflare.Account, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchLogpushAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
+func fetchLogpushAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -464,7 +465,7 @@ func fetchLogpushAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGr
 	}
 }
 
-func fetchLogpushAnalyticsForZone(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchLogpushAnalyticsForZone(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -472,7 +473,7 @@ func fetchLogpushAnalyticsForZone(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -492,7 +493,7 @@ func fetchLogpushAnalyticsForZone(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchZoneColocationAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchZoneColocationAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -501,7 +502,7 @@ func fetchZoneColocationAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -521,7 +522,7 @@ func fetchZoneColocationAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchZoneAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchZoneAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -530,7 +531,7 @@ func fetchZoneAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -672,7 +673,7 @@ func addHTTPAdaptiveGroups(z *zoneResp, name string, account string) {
 	}
 }
 
-func fetchLoadBalancerAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchLoadBalancerAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -681,7 +682,7 @@ func fetchLoadBalancerAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}

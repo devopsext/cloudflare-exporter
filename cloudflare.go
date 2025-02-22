@@ -2,18 +2,36 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
-	cloudflare "github.com/cloudflare/cloudflare-go"
+	cf "github.com/cloudflare/cloudflare-go/v4"
+	cfaccounts "github.com/cloudflare/cloudflare-go/v4/accounts"
+	cfrulesets "github.com/cloudflare/cloudflare-go/v4/rulesets"
+	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
 	"github.com/machinebox/graphql"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+)
+
+const (
+	freePlanId      = "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	apiPerPageLimit = 1000
+	gqlQueryLimit   = 9999
 )
 
 var (
 	cfGraphQLEndpoint = "https://api.cloudflare.com/client/v4/graphql/"
+	gql               = &GQL{
+		Client: graphql.NewClient(cfGraphQLEndpoint),
+	}
 )
+
+type GQL struct {
+	Client *graphql.Client
+	Mu     sync.RWMutex
+}
 
 type cloudflareResponse struct {
 	Viewer struct {
@@ -250,62 +268,55 @@ type lbResp struct {
 	ZoneTag string `json:"zoneTag"`
 }
 
-func fetchZones() []cloudflare.Zone {
-	var api *cloudflare.API
-	var err error
-	if len(viper.GetString("cf_api_token")) > 0 {
-		api, err = cloudflare.NewWithAPIToken(viper.GetString("cf_api_token"))
-	} else {
-		api, err = cloudflare.New(viper.GetString("cf_api_key"), viper.GetString("cf_api_email"))
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
+func fetchZones(accounts []cfaccounts.Account) []cfzones.Zone {
 
-	ctx := context.Background()
-	z, err := api.ListZones(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
+	var zones []cfzones.Zone
 
-	return z
+	for _, account := range accounts {
+		ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+		z, err := cfclient.Zones.List(ctx, cfzones.ZoneListParams{
+			Account: cf.F(cfzones.ZoneListParamsAccount{ID: cf.F(account.ID)}),
+			PerPage: cf.F(float64(apiPerPageLimit)),
+		})
+
+		if err != nil {
+			log.Error(err)
+			cancel()
+			continue
+		}
+		zones = append(zones, z.Result...)
+		cancel()
+	}
+	return zones
 }
 
 func fetchFirewallRules(zoneID string) map[string]string {
-	var api *cloudflare.API
-	var err error
-	if len(viper.GetString("cf_api_token")) > 0 {
-		api, err = cloudflare.NewWithAPIToken(viper.GetString("cf_api_token"))
-	} else {
-		api, err = cloudflare.New(viper.GetString("cf_api_key"), viper.GetString("cf_api_email"))
-	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
+	listOfRulesets, err := cfclient.Rulesets.List(ctx, cfrulesets.RulesetListParams{
+		ZoneID: cf.F(zoneID),
+	})
 	if err != nil {
-		log.Fatal(err)
+		log.Errorf("ZoneID:%s, Err:%s", zoneID, err)
+		return map[string]string{}
 	}
 
-	ctx := context.Background()
-	listOfRules, _, err := api.FirewallRules(ctx,
-		cloudflare.ZoneIdentifier(zoneID),
-		cloudflare.FirewallRuleListParams{})
-	if err != nil {
-		log.Fatal(err)
-	}
 	firewallRulesMap := make(map[string]string)
 
-	for _, rule := range listOfRules {
-		firewallRulesMap[rule.ID] = rule.Description
-	}
-
-	listOfRulesets, err := api.ListRulesets(ctx, cloudflare.ZoneIdentifier(zoneID), cloudflare.ListRulesetsParams{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, rulesetDesc := range listOfRulesets {
-		if rulesetDesc.Phase == "http_request_firewall_managed" {
-			ruleset, err := api.GetRuleset(ctx, cloudflare.ZoneIdentifier(zoneID), rulesetDesc.ID)
+	for _, rulesetDesc := range listOfRulesets.Result {
+		if rulesetDesc.Phase == cfrulesets.PhaseHTTPRequestFirewallManaged {
+			ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+			ruleset, err := cfclient.Rulesets.Get(ctx, rulesetDesc.ID, cfrulesets.RulesetGetParams{
+				ZoneID: cf.F(zoneID),
+			})
 			if err != nil {
-				log.Fatal(err)
+				log.Errorf("ZoneID:%s, RulesetID:%s, Err:%s", zoneID, rulesetDesc.ID, err)
+				cancel()
+				continue
 			}
+			cancel()
 			for _, rule := range ruleset.Rules {
 				firewallRulesMap[rule.ID] = rule.Description
 			}
@@ -315,25 +326,18 @@ func fetchFirewallRules(zoneID string) map[string]string {
 	return firewallRulesMap
 }
 
-func fetchAccounts() []cloudflare.Account {
-	var api *cloudflare.API
+func fetchAccounts() []cfaccounts.Account {
 	var err error
-	if len(viper.GetString("cf_api_token")) > 0 {
-		api, err = cloudflare.NewWithAPIToken(viper.GetString("cf_api_token"))
-	} else {
-		api, err = cloudflare.New(viper.GetString("cf_api_key"), viper.GetString("cf_api_email"))
-	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+	a, err := cfclient.Accounts.List(ctx, cfaccounts.AccountListParams{PerPage: cf.F(float64(apiPerPageLimit))})
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		return []cfaccounts.Account{}
 	}
 
-	ctx := context.Background()
-	a, _, err := api.Accounts(ctx, cloudflare.AccountsListParams{PaginationOptions: cloudflare.PaginationOptions{PerPage: 100}})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return a
+	return a.Result
 }
 
 func fetchZoneTotals(zoneIDs []string) (*cloudflareResponse, error) {
@@ -445,16 +449,17 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 		request.Header.Set("X-AUTH-EMAIL", viper.GetString("cf_api_email"))
 		request.Header.Set("X-AUTH-KEY", viper.GetString("cf_api_key"))
 	}
-	request.Var("limit", 9999)
+	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
 	ctx := context.Background()
-	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
 
 	var resp cloudflareResponse
-	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Error(err)
 		return nil, err
 	}
@@ -501,15 +506,16 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 		request.Header.Set("X-AUTH-EMAIL", viper.GetString("cf_api_email"))
 		request.Header.Set("X-AUTH-KEY", viper.GetString("cf_api_key"))
 	}
-	request.Var("limit", 9999)
+	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
 	ctx := context.Background()
-	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
 	var resp cloudflareResponseColo
-	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Error(err)
 		return nil, err
 	}
@@ -561,15 +567,16 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 		request.Header.Set("X-AUTH-EMAIL", viper.GetString("cf_api_email"))
 		request.Header.Set("X-AUTH-KEY", viper.GetString("cf_api_key"))
 	}
-	request.Var("limit", 9999)
+	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 	request.Var("accountID", accountID)
 
 	ctx := context.Background()
-	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
 	var resp cloudflareResponseAccts
-	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Error(err)
 		return nil, err
 	}
@@ -638,15 +645,16 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 		request.Header.Set("X-AUTH-EMAIL", viper.GetString("cf_api_email"))
 		request.Header.Set("X-AUTH-KEY", viper.GetString("cf_api_key"))
 	}
-	request.Var("limit", 9999)
+	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
 	ctx := context.Background()
-	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
 	var resp cloudflareResponseLb
-	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Error(err)
 		return nil, err
 	}
@@ -691,14 +699,15 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 	}
 
 	request.Var("accountID", accountID)
-	request.Var("limit", 9999)
+	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 
 	ctx := context.Background()
-	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
 	var resp cloudflareResponseLogpushAccount
-	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Error(err)
 		return nil, err
 	}
@@ -743,14 +752,15 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 	}
 
 	request.Var("zoneIDs", zoneIDs)
-	request.Var("limit", 9999)
+	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 
 	ctx := context.Background()
-	graphqlClient := graphql.NewClient(cfGraphQLEndpoint)
 	var resp cloudflareResponseLogpushZone
-	if err := graphqlClient.Run(ctx, request, &resp); err != nil {
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Error(err)
 		return nil, err
 	}
@@ -758,7 +768,7 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 	return &resp, nil
 }
 
-func findZoneAccountName(zones []cloudflare.Zone, ID string) (string, string) {
+func findZoneAccountName(zones []cfzones.Zone, ID string) (string, string) {
 	for _, z := range zones {
 		if z.ID == ID {
 			return z.Name, strings.ToLower(strings.ReplaceAll(z.Account.Name, " ", "-"))
@@ -768,7 +778,7 @@ func findZoneAccountName(zones []cloudflare.Zone, ID string) (string, string) {
 	return "", ""
 }
 
-func extractZoneIDs(zones []cloudflare.Zone) []string {
+func extractZoneIDs(zones []cfzones.Zone) []string {
 	var IDs []string
 
 	for _, z := range zones {
@@ -778,11 +788,29 @@ func extractZoneIDs(zones []cloudflare.Zone) []string {
 	return IDs
 }
 
-func filterNonFreePlanZones(zones []cloudflare.Zone) (filteredZones []cloudflare.Zone) {
+func filterNonFreePlanZones(zones []cfzones.Zone) (filteredZones []cfzones.Zone) {
+
+	var zoneIDs []string
+
 	for _, z := range zones {
-		if z.Plan.ZonePlanCommon.ID != "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee" {
+		extraFields, err := extractExtraFields(z.JSON.ExtraFields["plan"].Raw())
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		if extraFields["id"] == freePlanId {
+			continue
+		}
+		if !contains(zoneIDs, z.ID) {
+			zoneIDs = append(zoneIDs, z.ID)
 			filteredZones = append(filteredZones, z)
 		}
 	}
 	return
+}
+
+func extractExtraFields(fields string) (map[string]interface{}, error) {
+	var extraFields map[string]interface{}
+	err := json.Unmarshal([]byte(fields), &extraFields)
+	return extraFields, err
 }
