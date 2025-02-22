@@ -29,6 +29,7 @@ Required authentication scopes:
   Workers included in authentication scope)
 - `Firewall Services:Read` is required to fetch zone rule name for `cloudflare_zone_firewall_events_count` metric
 - `Account. Account Rulesets:Read` is required to fetch account rule name for `cloudflare_zone_firewall_events_count` metric
+- `Account:Load Balancing: Monitors and Pools:Read` is required to fetch pools origin health status `cloudflare_pool_origin_health_status` metric
 
 To authenticate this way, only set `CF_API_TOKEN` (omit `CF_API_EMAIL` and `CF_API_KEY`)
 
@@ -54,6 +55,7 @@ The exporter can be configured using env variables or command flags.
 | `SCRAPE_DELAY` | scrape delay in seconds, default `300` |
 | `METRICS_DENYLIST` | (Optional) cloudflare-exporter metrics to not export, comma delimited list of cloudflare-exporter metrics. If not set, all metrics are exported |
 | `ZONE_<NAME>` |  `DEPRECATED since 0.0.5` (optional) Zone ID. Add zones you want to scrape by adding env vars in this format. You can find the zone ids in Cloudflare dashboards. |
+| `LOG_LEVEL` | Set loglevel. Options are error, warn, info, debug. default `error` |
 
 Corresponding flags:
 ```
@@ -67,6 +69,7 @@ Corresponding flags:
   -metrics_path="/metrics": path for metrics, default /metrics
   -scrape_delay=300: scrape delay in seconds, defaults to 300
   -metrics_denylist="": cloudflare-exporter metrics to not export, comma delimited list
+  -log_level="error": log level(error,warn,info,debug)
 ```
 
 Note: `ZONE_<name>` configuration is not supported as flag.
