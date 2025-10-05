@@ -12,6 +12,7 @@ import (
 	cfload_balancers "github.com/cloudflare/cloudflare-go/v4/load_balancers"
 	cfrulesets "github.com/cloudflare/cloudflare-go/v4/rulesets"
 	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
+
 	"github.com/machinebox/graphql"
 	"github.com/spf13/viper"
 )
@@ -62,6 +63,35 @@ type cloudflareResponseLogpushAccount struct {
 	Viewer struct {
 		Accounts []logpushResponse `json:"accounts"`
 	} `json:"viewer"`
+}
+
+type r2AccountResp struct {
+	R2StorageGroups []struct {
+		Dimensions struct {
+			BucketName string `json:"bucketName"`
+		} `json:"dimensions"`
+		Max struct {
+			MetadataSize uint64 `json:"metadataSize"`
+			PayloadSize  uint64 `json:"payloadSize"`
+			ObjectCount  uint64 `json:"objectCount"`
+		} `json:"max"`
+	} `json:"r2StorageAdaptiveGroups"`
+
+	R2StorageOperations []struct {
+		Dimensions struct {
+			Action     string `json:"actionType"`
+			BucketName string `json:"bucketName"`
+		} `json:"dimensions"`
+		Sum struct {
+			Requests uint64 `json:"requests"`
+		} `json:"sum"`
+	} `json:"r2OperationsAdaptiveGroups"`
+}
+
+type cloudflareResponseR2Account struct {
+	Viewer struct {
+		Accounts []r2AccountResp `json:"accounts"`
+	}
 }
 
 type cloudflareResponseLogpushZone struct {
@@ -278,7 +308,7 @@ func fetchLoadblancerPools(account cfaccounts.Account) []cfload_balancers.Pool {
 			AccountID: cf.F(account.ID),
 		})
 	if err != nil {
-		log.Error(err)
+		log.Errorf("error fetching loadbalancer pools, err:%s", err)
 		return nil
 	}
 
@@ -297,7 +327,7 @@ func fetchZones(accounts []cfaccounts.Account) []cfzones.Zone {
 		})
 
 		if err != nil {
-			log.Error(err)
+			log.Errorf("error fetching zones: %s", err)
 			cancel()
 			continue
 		}
@@ -316,7 +346,7 @@ func fetchFirewallRules(zoneID string) map[string]string {
 		ZoneID: cf.F(zoneID),
 	})
 	if err != nil {
-		log.Errorf("ZoneID:%s, Err:%s", zoneID, err)
+		log.Errorf("error fetching firewall rules, ZoneID:%s, Err:%s", zoneID, err)
 		return map[string]string{}
 	}
 
@@ -329,7 +359,23 @@ func fetchFirewallRules(zoneID string) map[string]string {
 				ZoneID: cf.F(zoneID),
 			})
 			if err != nil {
-				log.Errorf("ZoneID:%s, RulesetID:%s, Err:%s", zoneID, rulesetDesc.ID, err)
+				log.Errorf("error fetching ruleset for managed firewall rules, ZoneID:%s, RulesetID:%s, Err:%s", zoneID, rulesetDesc.ID, err)
+				cancel()
+				continue
+			}
+			cancel()
+			for _, rule := range ruleset.Rules {
+				firewallRulesMap[rule.ID] = rule.Description
+			}
+		}
+
+		if rulesetDesc.Phase == cfrulesets.PhaseHTTPRequestFirewallCustom {
+			ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+			ruleset, err := cfclient.Rulesets.Get(ctx, rulesetDesc.ID, cfrulesets.RulesetGetParams{
+				ZoneID: cf.F(zoneID),
+			})
+			if err != nil {
+				log.Errorf("error fetching ruleset for custom firewall rules, ZoneID:%s, RulesetID:%s, Err:%s", zoneID, rulesetDesc.ID, err)
 				cancel()
 				continue
 			}
@@ -350,7 +396,7 @@ func fetchAccounts() []cfaccounts.Account {
 	defer cancel()
 	a, err := cfclient.Accounts.List(ctx, cfaccounts.AccountListParams{PerPage: cf.F(float64(apiPerPageLimit))})
 	if err != nil {
-		log.Error(err)
+		log.Errorf("error fetching accounts:%s", err)
 		return []cfaccounts.Account{}
 	}
 
@@ -439,7 +485,7 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 					clientRequestHTTPHost
 				}
 			}
-			httpRequestsEdgeCountryHost: httpRequestsAdaptiveGroups(limit: $limit, filter: { datetime_geq: $mintime, datetime_lt: $maxtime }) {
+			httpRequestsEdgeCountryHost: httpRequestsAdaptiveGroups(limit: $limit, filter: { datetime_geq: $mintime, datetime_lt: $maxtime, requestSource_in: ["eyeball"] }) {
 				count
 				dimensions {
 					edgeResponseStatus
@@ -477,7 +523,7 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
-		log.Error(err)
+		log.Errorf("failed to fetch zone totals, err:%s", err)
 		return nil, err
 	}
 
@@ -533,7 +579,7 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
-		log.Error(err)
+		log.Errorf("failed to fetch colocation totals, err:%s", err)
 		return nil, err
 	}
 
@@ -554,7 +600,6 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 					dimensions {
 						scriptName
 						status
-						datetime
 					}
 
 					sum {
@@ -594,7 +639,7 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
-		log.Error(err)
+		log.Error("error fetching worker totals, err:", err)
 		return nil, err
 	}
 
@@ -672,7 +717,7 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
-		log.Error(err)
+		log.Errorf("error fetching load balancer totals, err:%s", err)
 		return nil, err
 	}
 	return &resp, nil
@@ -725,7 +770,7 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
-		log.Error(err)
+		log.Errorf("error fetching logpush account totals, err:", err)
 		return nil, err
 	}
 	return &resp, nil
@@ -778,10 +823,69 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
-		log.Error(err)
+		log.Errorf("error fetching logpush zone totals, err:%s", err)
 		return nil, err
 	}
 
+	return &resp, nil
+}
+
+func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
+	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
+	s := 60 * time.Second
+	now = now.Truncate(s)
+
+	request := graphql.NewRequest(`query($accountID: String!, $limit: Int!, $date: String!) {
+		viewer {
+		  accounts(filter: {accountTag : $accountID }) {
+			r2StorageAdaptiveGroups(
+			  filter: {
+				date: $date
+			  },
+			  limit: $limit
+			) {
+			  dimensions {
+          		bucketName
+			  }
+        	  max {
+				metadataSize
+          		payloadSize
+				objectCount
+			  }
+      		}
+			r2OperationsAdaptiveGroups(filter: { date: $date }, limit: $limit) {
+				dimensions {
+					actionType
+					bucketName
+				}
+				sum {
+					requests
+				}
+			}
+			}
+		  }
+	  }`)
+
+	if len(viper.GetString("cf_api_token")) > 0 {
+		request.Header.Set("Authorization", "Bearer "+viper.GetString("cf_api_token"))
+	} else {
+		request.Header.Set("X-AUTH-EMAIL", viper.GetString("cf_api_email"))
+		request.Header.Set("X-AUTH-KEY", viper.GetString("cf_api_key"))
+	}
+
+	request.Var("accountID", accountID)
+	request.Var("limit", gqlQueryLimit)
+	request.Var("date", now.Format("2006-01-02"))
+
+	ctx := context.Background()
+	gql.Client.Log = func(s string) { log.Debug(s) }
+	var resp cloudflareResponseR2Account
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+	if err := gql.Client.Run(ctx, request, &resp); err != nil {
+		log.Errorf("error fetching R2 account: %s", err)
+		return nil, err
+	}
 	return &resp, nil
 }
 

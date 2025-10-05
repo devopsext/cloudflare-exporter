@@ -1,4 +1,5 @@
-FROM golang:alpine as builder
+# check=skip=SecretsUsedInArgOrEnv we're just set default here, not any secret data
+FROM golang:alpine AS builder
 
 WORKDIR /app
 
@@ -11,13 +12,13 @@ COPY go.sum go.sum
 RUN go get -d -v
 RUN CGO_ENABLED=0 GOOS=linux go build --ldflags '-w -s -extldflags "-static"' -o cloudflare_exporter .
 
-FROM alpine:3.19
+FROM alpine:3.20
 
 RUN apk update && apk add ca-certificates
 
 COPY --from=builder /app/cloudflare_exporter cloudflare_exporter
 
-ENV CF_API_KEY ""
-ENV CF_API_EMAIL ""
+ENV CF_API_KEY=""
+ENV CF_API_EMAIL=""
 
 ENTRYPOINT [ "./cloudflare_exporter" ]

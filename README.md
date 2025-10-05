@@ -23,15 +23,17 @@ The preferred way of authenticating is with an API token, for which the scope ca
 dashboard.
 
 Required authentication scopes:
-- `Analytics:Read` is required for zone-level metrics
-- `Account.Account Analytics:Read` is required for Worker metrics
-- `Account Settings:Read` is required for Worker metrics (for listing accessible accounts, scraping all available
+- `Zone/Analytics:Read` is required for zone-level metrics
+- `Account/Account Analytics:Read` is required for Worker metrics
+- `Account/Account Settings:Read` is required for Worker metrics (for listing accessible accounts, scraping all available
   Workers included in authentication scope)
-- `Firewall Services:Read` is required to fetch zone rule name for `cloudflare_zone_firewall_events_count` metric
-- `Account. Account Rulesets:Read` is required to fetch account rule name for `cloudflare_zone_firewall_events_count` metric
+- `Zone/Firewall Services:Read` is required to fetch zone rule name for `cloudflare_zone_firewall_events_count` metric
+- `Account/Account Rulesets:Read` is required to fetch account rule name for `cloudflare_zone_firewall_events_count` metric
 - `Account:Load Balancing: Monitors and Pools:Read` is required to fetch pools origin health status `cloudflare_pool_origin_health_status` metric
 
 To authenticate this way, only set `CF_API_TOKEN` (omit `CF_API_EMAIL` and `CF_API_KEY`)
+
+[Shortcut to create the API token](https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22analytics%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22firewall_services%22%2C%22type%22%3A%22read%22%7D%5D&name=Cloudflare+Exporter&accountId=*&zoneId=all)
 
 ### User email + API key
 To authenticate with user email + API key, use the `Global API Key` from the Cloudflare dashboard.
@@ -105,6 +107,9 @@ Note: `ZONE_<name>` configuration is not supported as flag.
 # HELP cloudflare_zone_pool_requests_total Requests per pool
 # HELP cloudflare_logpush_failed_jobs_account_count Number of failed logpush jobs on the account level
 # HELP cloudflare_logpush_failed_jobs_zone_count Number of failed logpush jobs on the zone level
+# HELP cloudflare_r2_operation_count Number of operations performed by R2
+# HELP cloudflare_r2_storage_bytes Storage used by R2
+# HELP cloudflare_r2_storage_total_bytes Total storage used by R2
 ```
 
 ## Helm chart repository

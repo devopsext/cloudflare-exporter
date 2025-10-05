@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -47,14 +46,6 @@ func getTargetZones() []string {
 
 	if len(viper.GetString("cf_zones")) > 0 {
 		zoneIDs = strings.Split(viper.GetString("cf_zones"), ",")
-	} else {
-		// deprecated
-		for _, e := range os.Environ() {
-			if strings.HasPrefix(e, "ZONE_") {
-				split := strings.SplitN(e, "=", 2)
-				zoneIDs = append(zoneIDs, split[1])
-			}
-		}
 	}
 	return zoneIDs
 }
@@ -121,6 +112,7 @@ func fetchMetrics() {
 	for _, a := range accounts {
 		go fetchWorkerAnalytics(a, &wg)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
+		go fetchR2StorageForAccount(a, &wg)
 		go fetchLoadblancerPoolsHealth(a, &wg)
 	}
 
@@ -155,31 +147,19 @@ func fetchMetrics() {
 	wg.Wait()
 }
 
-func runExpoter() {
-	// fmt.Println(" :", viper.GetString("cf_api_email"))
-	// fmt.Println(" :", viper.GetString("cf_api_key"))
-
-	// fmt.Println(" :", viper.GetString("metrics_path"))
-
-	// fmt.Println(":ASD :", viper.GetString("listen"))
-
-	// fmt.Println(" :", cfgListen)
+func runExporter() {
 
 	cfgMetricsPath := viper.GetString("metrics_path")
-
-	if !(len(viper.GetString("cf_api_token")) > 0 || (len(viper.GetString("cf_api_email")) > 0 && len(viper.GetString("cf_api_key")) > 0)) {
-		log.Fatal("Please provide CF_API_KEY+CF_API_EMAIL or CF_API_TOKEN")
-	}
 
 	metricsDenylist := []string{}
 	if len(viper.GetString("metrics_denylist")) > 0 {
 		metricsDenylist = strings.Split(viper.GetString("metrics_denylist"), ",")
 	}
-	deniedMetricsSet, err := buildDeniedMetricsSet(metricsDenylist)
+	metricsSet, err := buildFilteredMetricsSet(metricsDenylist)
 	if err != nil {
 		log.Fatal(err)
 	}
-	mustRegisterMetrics(deniedMetricsSet)
+	mustRegisterMetrics(metricsSet)
 
 	go func() {
 		for ; true; <-time.NewTicker(60 * time.Second).C {
@@ -209,19 +189,18 @@ func runExpoter() {
 
 func main() {
 	var cmd = &cobra.Command{
-		Use:   "viper-test",
-		Short: "testing viper",
+		Use:   "cloudflare_exporter",
+		Short: "Prometheus exporter exposing Cloudflare Analytics dashboard data on a per-zone basis, as well as Worker metrics",
 		Run: func(_ *cobra.Command, _ []string) {
-			runExpoter()
+			runExporter()
 		},
 	}
 
-	//vip := viper.New()
 	viper.AutomaticEnv()
 
 	flags := cmd.Flags()
 
-	flags.String("listen", ":8080", "listen on addr:port ( default :8080), omit addr to listen on all interfaces")
+	flags.String("listen", ":8080", "listen on addr:port (default :8080), omit addr to listen on all interfaces")
 	viper.BindEnv("listen")
 	viper.SetDefault("listen", ":8080")
 
@@ -229,20 +208,20 @@ func main() {
 	viper.BindEnv("metrics_path")
 	viper.SetDefault("metrics_path", "/metrics")
 
-	flags.String("cf_api_key", "", "cloudflare api key, works with api_email flag")
+	flags.String("cf_api_key", "", "cloudflare api key, required with api_email flag")
 	viper.BindEnv("cf_api_key")
 
-	flags.String("cf_api_email", "", "cloudflare api email, works with api_key flag")
+	flags.String("cf_api_email", "", "cloudflare api email, required with api_key flag")
 	viper.BindEnv("cf_api_email")
 
 	flags.String("cf_api_token", "", "cloudflare api token (preferred)")
 	viper.BindEnv("cf_api_token")
 
-	flags.String("cf_zones", "", "cloudflare zones to export, comma delimited list")
+	flags.String("cf_zones", "", "cloudflare zones to export, comma delimited list of zone ids")
 	viper.BindEnv("cf_zones")
 	viper.SetDefault("cf_zones", "")
 
-	flags.String("cf_exclude_zones", "", "cloudflare zones to exclude, comma delimited list")
+	flags.String("cf_exclude_zones", "", "cloudflare zones to exclude, comma delimited list of zone ids")
 	viper.BindEnv("cf_exclude_zones")
 	viper.SetDefault("cf_exclude_zones", "")
 
@@ -258,22 +237,22 @@ func main() {
 	viper.BindEnv("metrics_denylist")
 	viper.SetDefault("metrics_denylist", "")
 
-	flags.String("log_level", "", "log level")
+	flags.String("log_level", "info", "log level")
 	viper.BindEnv("log_level")
-	viper.SetDefault("log_level", "error")
+	viper.SetDefault("log_level", "info")
 
 	viper.BindPFlags(flags)
 
 	logLevel := viper.GetString("log_level")
-	if logLevel == "debug" {
+	switch logLevel {
+	case "debug":
 		log.Level = logrus.DebugLevel
 		log.SetReportCaller(true)
-	} else if logLevel == "warn" {
+	case "warn":
 		log.Level = logrus.WarnLevel
-	} else if logLevel == "error" {
+	case "error":
 		log.Level = logrus.ErrorLevel
-		log.SetReportCaller(true)
-	} else {
+	default:
 		log.Level = logrus.InfoLevel
 	}
 
@@ -292,12 +271,14 @@ func main() {
 			cfoption.WithAPIToken(viper.GetString("cf_api_token")),
 			cfoption.WithRequestTimeout(cftimeout*2),
 		)
-	} else {
+	} else if len(viper.GetString("cf_api_email")) > 0 && len(viper.GetString("cf_api_key")) > 0 {
 		cfclient = cf.NewClient(
 			cfoption.WithAPIKey(viper.GetString("cf_api_key")),
 			cfoption.WithAPIEmail(viper.GetString("cf_api_email")),
 			cfoption.WithRequestTimeout(cftimeout*2),
 		)
+	} else {
+		log.Fatal("Please provide CF_API_KEY+CF_API_EMAIL or CF_API_TOKEN")
 	}
 	cmd.Execute()
 

@@ -53,6 +53,9 @@ const (
 	poolOriginHealthStatusMetricName             MetricName = "cloudflare_pool_origin_health_status"
 	logpushFailedJobsAccountMetricName           MetricName = "cloudflare_logpush_failed_jobs_account_count"
 	logpushFailedJobsZoneMetricName              MetricName = "cloudflare_logpush_failed_jobs_zone_count"
+	r2StorageTotalMetricName                     MetricName = "cloudflare_r2_storage_total_bytes"
+	r2StorageMetricName                          MetricName = "cloudflare_r2_storage_bytes"
+	r2OperationMetricName                        MetricName = "cloudflare_r2_operation_count"
 )
 
 type MetricsSet map[MetricName]struct{}
@@ -215,25 +218,25 @@ var (
 	workerRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: workerRequestsMetricName.String(),
 		Help: "Number of requests sent to worker by script name",
-	}, []string{"script_name", "account"},
+	}, []string{"script_name", "account", "status"},
 	)
 
 	workerErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: workerErrorsMetricName.String(),
 		Help: "Number of errors by script name",
-	}, []string{"script_name", "account"},
+	}, []string{"script_name", "account", "status"},
 	)
 
 	workerCPUTime = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: workerCPUTimeMetricName.String(),
 		Help: "CPU time quantiles by script name",
-	}, []string{"script_name", "account", "quantile"},
+	}, []string{"script_name", "account", "status", "quantile"},
 	)
 
 	workerDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: workerDurationMetricName.String(),
 		Help: "Duration quantiles by script name (GB*s)",
-	}, []string{"script_name", "account", "quantile"},
+	}, []string{"script_name", "account", "status", "quantile"},
 	)
 
 	poolHealthStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -271,6 +274,21 @@ var (
 	},
 		[]string{"destination", "job_id", "final"},
 	)
+
+	r2StorageTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2StorageTotalMetricName.String(),
+		Help: "Total storage used by R2",
+	}, []string{"account"})
+
+	r2Storage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2StorageMetricName.String(),
+		Help: "Storage used by R2",
+	}, []string{"account", "bucket"})
+
+	r2Operation = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2OperationMetricName.String(),
+		Help: "Number of operations performed by R2",
+	}, []string{"account", "bucket", "operation"})
 )
 
 func buildAllMetricsSet() MetricsSet {
@@ -308,12 +326,15 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(poolRequestsTotalMetricName)
 	allMetricsSet.Add(logpushFailedJobsAccountMetricName)
 	allMetricsSet.Add(logpushFailedJobsZoneMetricName)
+	allMetricsSet.Add(r2StorageTotalMetricName)
+	allMetricsSet.Add(r2OperationMetricName)
 	return allMetricsSet
 }
 
-func buildDeniedMetricsSet(metricsDenylist []string) (MetricsSet, error) {
+func buildFilteredMetricsSet(metricsDenylist []string) (MetricsSet, error) {
 	deniedMetricsSet := MetricsSet{}
 	allMetricsSet := buildAllMetricsSet()
+
 	for _, metric := range metricsDenylist {
 		if !allMetricsSet.Has(MetricName(metric)) {
 			return nil, fmt.Errorf("metric %s doesn't exists", metric)
@@ -423,6 +444,16 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(logpushFailedJobsZoneMetricName) {
 		prometheus.MustRegister(logpushFailedJobsZone)
 	}
+	if !deniedMetrics.Has(r2StorageTotalMetricName) {
+		prometheus.MustRegister(r2StorageTotal)
+	}
+	if !deniedMetrics.Has(r2StorageMetricName) {
+		prometheus.MustRegister(r2Storage)
+	}
+	if !deniedMetrics.Has(r2OperationMetricName) {
+		prometheus.MustRegister(r2Operation)
+	}
+
 }
 
 func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup) {
@@ -475,16 +506,16 @@ func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {
 
 	for _, a := range r.Viewer.Accounts {
 		for _, w := range a.WorkersInvocationsAdaptive {
-			workerRequests.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName}).Add(float64(w.Sum.Requests))
-			workerErrors.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName}).Add(float64(w.Sum.Errors))
-			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P50"}).Set(float64(w.Quantiles.CPUTimeP50))
-			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P75"}).Set(float64(w.Quantiles.CPUTimeP75))
-			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P99"}).Set(float64(w.Quantiles.CPUTimeP99))
-			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P999"}).Set(float64(w.Quantiles.CPUTimeP999))
-			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P50"}).Set(float64(w.Quantiles.DurationP50))
-			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P75"}).Set(float64(w.Quantiles.DurationP75))
-			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P99"}).Set(float64(w.Quantiles.DurationP99))
-			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "quantile": "P999"}).Set(float64(w.Quantiles.DurationP999))
+			workerRequests.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status}).Add(float64(w.Sum.Requests))
+			workerErrors.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status}).Add(float64(w.Sum.Errors))
+			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P50"}).Set(float64(w.Quantiles.CPUTimeP50))
+			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P75"}).Set(float64(w.Quantiles.CPUTimeP75))
+			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P99"}).Set(float64(w.Quantiles.CPUTimeP99))
+			workerCPUTime.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P999"}).Set(float64(w.Quantiles.CPUTimeP999))
+			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P50"}).Set(float64(w.Quantiles.DurationP50))
+			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P75"}).Set(float64(w.Quantiles.DurationP75))
+			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P99"}).Set(float64(w.Quantiles.DurationP99))
+			workerDuration.With(prometheus.Labels{"script_name": w.Dimensions.ScriptName, "account": accountName, "status": w.Dimensions.Status, "quantile": "P999"}).Set(float64(w.Quantiles.DurationP999))
 		}
 	}
 }
@@ -510,6 +541,28 @@ func fetchLogpushAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGr
 				"job_id":      strconv.Itoa(LogpushHealthAdaptiveGroup.Dimensions.JobID),
 				"final":       strconv.Itoa(LogpushHealthAdaptiveGroup.Dimensions.Final)}).Add(float64(LogpushHealthAdaptiveGroup.Count))
 		}
+	}
+}
+
+func fetchR2StorageForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	r, err := fetchR2Account(account.ID)
+
+	if err != nil {
+		return
+	}
+	for _, acc := range r.Viewer.Accounts {
+		var totalStorage uint64
+		for _, bucket := range acc.R2StorageGroups {
+			totalStorage += bucket.Max.PayloadSize
+			r2Storage.With(prometheus.Labels{"account": account.Name, "bucket": bucket.Dimensions.BucketName}).Set(float64(bucket.Max.PayloadSize))
+		}
+		for _, operation := range acc.R2StorageOperations {
+			r2Operation.With(prometheus.Labels{"account": account.Name, "bucket": operation.Dimensions.BucketName, "operation": operation.Dimensions.Action}).Set(float64(operation.Sum.Requests))
+		}
+		r2StorageTotal.With(prometheus.Labels{"account": account.Name}).Set(float64(totalStorage))
 	}
 }
 
