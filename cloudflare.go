@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	cf "github.com/cloudflare/cloudflare-go/v4"
@@ -905,7 +904,7 @@ func filterNonFreePlanZones(zones []cfzones.Zone) (filteredZones []cfzones.Zone)
 	var zoneIDs []string
 
 	for _, z := range zones {
-		extraFields, err := extractExtraFields(z.JSON.ExtraFields["plan"].Raw())
+		extraFields, err := jsonStringToMap(z.JSON.ExtraFields["plan"].Raw())
 		if err != nil {
 			log.Error(err)
 			continue
@@ -919,10 +918,4 @@ func filterNonFreePlanZones(zones []cfzones.Zone) (filteredZones []cfzones.Zone)
 		}
 	}
 	return
-}
-
-func extractExtraFields(fields string) (map[string]interface{}, error) {
-	var extraFields map[string]interface{}
-	err := json.Unmarshal([]byte(fields), &extraFields)
-	return extraFields, err
 }

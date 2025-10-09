@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/spf13/viper"
@@ -14,4 +15,10 @@ func GetTimeRange() (now time.Time, now1mAgo time.Time) {
 	now1mAgo = now.Add(-60 * time.Second)
 
 	return now, now1mAgo
+}
+
+func jsonStringToMap(fields string) (map[string]interface{}, error) {
+	var extraFields map[string]interface{}
+	err := json.Unmarshal([]byte(fields), &extraFields)
+	return extraFields, err
 }
