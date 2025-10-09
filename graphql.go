@@ -10,6 +10,7 @@ import (
 const (
 	cfGraphQLEndpoint = "https://api.cloudflare.com/client/v4/graphql/"
 	gqlQueryLimit     = 9999
+	cfgraphqlreqlimit = 10 // 10 is the maximum amount of zones you can request at once
 )
 
 type GraphQL struct {

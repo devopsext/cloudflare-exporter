@@ -18,10 +18,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	cfgraphqlreqlimit = 10 // 10 is the maximum amount of zones you can request at once
-)
-
 var (
 	cfclient  *cf.Client
 	cftimeout time.Duration
