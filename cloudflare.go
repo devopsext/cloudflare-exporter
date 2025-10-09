@@ -498,7 +498,8 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
 
 	var resp cloudflareResponse
 	gql.Mu.RLock()
@@ -550,7 +551,9 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
 	var resp cloudflareResponseColo
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
@@ -605,7 +608,9 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 	request.Var("mintime", now1mAgo)
 	request.Var("accountID", accountID)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
 	var resp cloudflareResponseAccts
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
@@ -677,7 +682,9 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
 	var resp cloudflareResponseLb
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
@@ -723,7 +730,9 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
 	var resp cloudflareResponseLogpushAccount
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
@@ -769,7 +778,9 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
 	var resp cloudflareResponseLogpushZone
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
@@ -821,7 +832,9 @@ func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
 	request.Var("limit", gqlQueryLimit)
 	request.Var("date", now.Format("2006-01-02"))
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+
 	gql.Client.Log = func(s string) { log.Debug(s) }
 	var resp cloudflareResponseR2Account
 	gql.Mu.RLock()
