@@ -8,6 +8,7 @@ import (
 	cf "github.com/cloudflare/cloudflare-go/v4"
 	cfaccounts "github.com/cloudflare/cloudflare-go/v4/accounts"
 	cfload_balancers "github.com/cloudflare/cloudflare-go/v4/load_balancers"
+	cfpagination "github.com/cloudflare/cloudflare-go/v4/packages/pagination"
 	cfrulesets "github.com/cloudflare/cloudflare-go/v4/rulesets"
 	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
 
@@ -16,7 +17,7 @@ import (
 
 const (
 	freePlanId      = "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-	apiPerPageLimit = 1000
+	apiPerPageLimit = 999
 )
 
 type cloudflareResponse struct {
@@ -284,19 +285,43 @@ type lbResp struct {
 }
 
 func fetchLoadblancerPools(account cfaccounts.Account) []cfload_balancers.Pool {
+
+	var cf_pools []cfload_balancers.Pool
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
-	pools, err := cfclient.LoadBalancers.Pools.List(
-		ctx,
+	page := cfclient.LoadBalancers.Pools.ListAutoPaging(ctx,
 		cfload_balancers.PoolListParams{
 			AccountID: cf.F(account.ID),
 		})
-	if err != nil {
-		log.Errorf("error fetching loadbalancer pools, err:%v", err)
+	if page.Err() != nil {
+		log.Errorf("error fetching loadbalancer pools, err:%v", page.Err())
 		return nil
 	}
 
-	return pools.Result
+	for page.Next() {
+		cf_pools = append(cf_pools, page.Current())
+	}
+
+	return cf_pools
+}
+
+func getAccountZoneList(accountID string) ([]cfzones.Zone, error) {
+	var zoneList []cfzones.Zone
+	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+	defer cancel()
+	page := cfclient.Zones.ListAutoPaging(ctx, cfzones.ZoneListParams{
+		Account: cf.F(cfzones.ZoneListParamsAccount{ID: cf.F(accountID)}),
+		PerPage: cf.F(float64(apiPerPageLimit)),
+	})
+	if page.Err() != nil {
+		return nil, page.Err()
+	}
+
+	for page.Next() {
+		zoneList = append(zoneList, page.Current())
+	}
+
+	return zoneList, nil
 }
 
 func fetchZones(accounts []cfaccounts.Account) []cfzones.Zone {
@@ -304,29 +329,47 @@ func fetchZones(accounts []cfaccounts.Account) []cfzones.Zone {
 	var zones []cfzones.Zone
 
 	for _, account := range accounts {
-		ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
-		z, err := cfclient.Zones.List(ctx, cfzones.ZoneListParams{
-			Account: cf.F(cfzones.ZoneListParamsAccount{ID: cf.F(account.ID)}),
-			PerPage: cf.F(float64(apiPerPageLimit)),
-		})
+		z, err := getAccountZoneList(account.ID)
 
 		if err != nil {
 			log.Errorf("error fetching zones: %v", err)
-			cancel()
 			continue
 		}
-		zones = append(zones, z.Result...)
-		cancel()
+		zones = append(zones, z...)
 	}
 	return zones
 }
 
-func fetchFirewallRules(zoneID string) map[string]string {
-
+func getRuleSetsList(params cfrulesets.RulesetListParams) ([]cfrulesets.RulesetListResponse, error) {
+	var ruleSetList []cfrulesets.RulesetListResponse
+	var page *cfpagination.CursorPagination[cfrulesets.RulesetListResponse]
+	var err error
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
+	page, err = cfclient.Rulesets.List(ctx, params)
+	if err != nil {
+		return nil, err
+	}
 
-	listOfRulesets, err := cfclient.Rulesets.List(ctx, cfrulesets.RulesetListParams{
+	ruleSetList = append(ruleSetList, page.Result...)
+
+	for page.ResultInfo.Cursor != "" {
+		params.Cursor = cf.F(page.ResultInfo.Cursor)
+		ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
+		page, err = cfclient.Rulesets.List(ctx, params)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		ruleSetList = append(ruleSetList, page.Result...)
+	}
+
+	return ruleSetList, nil
+}
+
+func fetchFirewallRules(zoneID string) map[string]string {
+
+	listOfRulesets, err := getRuleSetsList(cfrulesets.RulesetListParams{
 		ZoneID: cf.F(zoneID),
 	})
 	if err != nil {
@@ -336,7 +379,7 @@ func fetchFirewallRules(zoneID string) map[string]string {
 
 	firewallRulesMap := make(map[string]string)
 
-	for _, rulesetDesc := range listOfRulesets.Result {
+	for _, rulesetDesc := range listOfRulesets {
 		if rulesetDesc.Phase == cfrulesets.PhaseHTTPRequestFirewallManaged {
 			ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 			ruleset, err := cfclient.Rulesets.Get(ctx, rulesetDesc.ID, cfrulesets.RulesetGetParams{
@@ -374,17 +417,23 @@ func fetchFirewallRules(zoneID string) map[string]string {
 }
 
 func fetchAccounts() []cfaccounts.Account {
-	var err error
-
+	var cfAccounts []cfaccounts.Account
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
-	a, err := cfclient.Accounts.List(ctx, cfaccounts.AccountListParams{PerPage: cf.F(float64(apiPerPageLimit))})
-	if err != nil {
-		log.Errorf("error fetching accounts:%v", err)
-		return []cfaccounts.Account{}
+	page := cfclient.Accounts.ListAutoPaging(ctx,
+		cfaccounts.AccountListParams{
+			PerPage: cf.F(float64(apiPerPageLimit)),
+		})
+	if page.Err() != nil {
+		log.Errorf("error fetching accounts:%v", page.Err())
+		return nil
 	}
 
-	return a.Result
+	for page.Next() {
+		cfAccounts = append(cfAccounts, page.Current())
+	}
+
+	return cfAccounts
 }
 
 func fetchZoneTotals(zoneIDs []string) (*cloudflareResponse, error) {
