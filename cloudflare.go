@@ -498,12 +498,13 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
 	var resp cloudflareResponse
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("failed to fetch zone totals, err:%v", err)
 		return nil, err
@@ -551,12 +552,13 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
 	var resp cloudflareResponseColo
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("failed to fetch colocation totals, err:%v", err)
 		return nil, err
@@ -608,12 +610,13 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 	request.Var("mintime", now1mAgo)
 	request.Var("accountID", accountID)
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
 	var resp cloudflareResponseAccts
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("error fetching worker totals, err:%v", err)
 		return nil, err
@@ -682,12 +685,13 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 	request.Var("mintime", now1mAgo)
 	request.Var("zoneIDs", zoneIDs)
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
 	var resp cloudflareResponseLb
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("error fetching load balancer totals, err:%v", err)
 		return nil, err
@@ -730,12 +734,13 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
+	var resp cloudflareResponseLogpushAccount
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
-	var resp cloudflareResponseLogpushAccount
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("error fetching logpush account totals, err:%v", err)
 		return nil, err
@@ -778,12 +783,13 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
 	var resp cloudflareResponseLogpushZone
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("error fetching logpush zone totals, err:%v", err)
 		return nil, err
@@ -832,12 +838,13 @@ func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
 	request.Var("limit", gqlQueryLimit)
 	request.Var("date", now.Format("2006-01-02"))
 
+	gql.Mu.RLock()
+	defer gql.Mu.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
 	var resp cloudflareResponseR2Account
-	gql.Mu.RLock()
-	defer gql.Mu.RUnlock()
 	if err := gql.Client.Run(ctx, request, &resp); err != nil {
 		log.Errorf("error fetching R2 account: %v", err)
 		return nil, err
