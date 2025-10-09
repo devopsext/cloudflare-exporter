@@ -24,7 +24,7 @@ const (
 
 var (
 	cfclient  *cf.Client
-	cftimeout = 10 * time.Second
+	cftimeout time.Duration
 	gql       *GraphQL
 	log       = logrus.New()
 )
@@ -234,6 +234,10 @@ func main() {
 	viper.BindEnv("free_tier")
 	viper.SetDefault("free_tier", false)
 
+	flags.Duration("cf_timeout", 10*time.Second, "cloudflare request timeout, default 10 seconds")
+	viper.BindEnv("cf_timeout")
+	viper.SetDefault("cf_timeout", 10*time.Second)
+
 	flags.String("metrics_denylist", "", "metrics to not expose, comma delimited list")
 	viper.BindEnv("metrics_denylist")
 	viper.SetDefault("metrics_denylist", "")
@@ -267,14 +271,16 @@ func main() {
 		},
 	})
 
+	cftimeout = viper.GetDuration("cf_timeout")
+
 	if len(viper.GetString("cf_api_token")) > 0 {
 		cfclient = cf.NewClient(
 			cfoption.WithAPIToken(viper.GetString("cf_api_token")),
-			cfoption.WithRequestTimeout(cftimeout*2),
+			cfoption.WithRequestTimeout(cftimeout),
 		)
 		middlewares := NewHeaderMiddleware("Authorization", "Bearer "+viper.GetString("cf_api_token"), http.DefaultTransport)
 		gql_http_client := &http.Client{
-			Timeout:   cftimeout * 2,
+			Timeout:   cftimeout,
 			Transport: middlewares,
 		}
 		gql = NewGraphQLClient(gql_http_client)
@@ -282,12 +288,12 @@ func main() {
 		cfclient = cf.NewClient(
 			cfoption.WithAPIKey(viper.GetString("cf_api_key")),
 			cfoption.WithAPIEmail(viper.GetString("cf_api_email")),
-			cfoption.WithRequestTimeout(cftimeout*2),
+			cfoption.WithRequestTimeout(cftimeout),
 		)
 		auth_email_header := NewHeaderMiddleware("X-AUTH-EMAIL", viper.GetString("cf_api_email"), http.DefaultTransport)
 		middlewares := NewHeaderMiddleware("X-AUTH-KEY", viper.GetString("cf_api_key"), auth_email_header)
 		gql_http_client := &http.Client{
-			Timeout:   cftimeout * 2,
+			Timeout:   cftimeout,
 			Transport: middlewares,
 		}
 		gql = NewGraphQLClient(gql_http_client)
