@@ -9,6 +9,7 @@ import (
 
 const (
 	cfGraphQLEndpoint = "https://api.cloudflare.com/client/v4/graphql/"
+	gqlQueryLimit     = 9999
 )
 
 type GraphQL struct {

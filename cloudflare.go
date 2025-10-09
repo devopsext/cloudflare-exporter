@@ -19,7 +19,6 @@ import (
 const (
 	freePlanId      = "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	apiPerPageLimit = 1000
-	gqlQueryLimit   = 9999
 )
 
 type cloudflareResponse struct {
