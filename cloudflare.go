@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"time"
 
 	cf "github.com/cloudflare/cloudflare-go/v4"
 	cfaccounts "github.com/cloudflare/cloudflare-go/v4/accounts"
@@ -13,7 +12,6 @@ import (
 	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
 
 	"github.com/machinebox/graphql"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -390,10 +388,6 @@ func fetchAccounts() []cfaccounts.Account {
 }
 
 func fetchZoneTotals(zoneIDs []string) (*cloudflareResponse, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`
 query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
@@ -493,6 +487,7 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 }
 `)
 
+	now, now1mAgo := GetTimeRange()
 	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
@@ -514,10 +509,6 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 }
 
 func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`
 	query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
@@ -547,6 +538,7 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 		}
 `)
 
+	now, now1mAgo := GetTimeRange()
 	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
@@ -568,10 +560,6 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 }
 
 func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`
 	query ($accountID: String!, $mintime: Time!, $maxtime: Time!, $limit: Int!) {
@@ -605,6 +593,7 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 	}
 `)
 
+	now, now1mAgo := GetTimeRange()
 	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
@@ -626,10 +615,6 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 }
 
 func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`
 	query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
@@ -680,6 +665,8 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 		}
 	}
 `)
+
+	now, now1mAgo := GetTimeRange()
 	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
 	request.Var("mintime", now1mAgo)
@@ -700,10 +687,6 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 }
 
 func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`query($accountID: String!, $limit: Int!, $mintime: Time!, $maxtime: Time!) {
 		viewer {
@@ -729,6 +712,7 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 		}
 	  }`)
 
+	now, now1mAgo := GetTimeRange()
 	request.Var("accountID", accountID)
 	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
@@ -749,10 +733,6 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 }
 
 func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`query($zoneIDs: String!, $limit: Int!, $mintime: Time!, $maxtime: Time!) {
 		viewer {
@@ -778,6 +758,7 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 		}
 	  }`)
 
+	now, now1mAgo := GetTimeRange()
 	request.Var("zoneIDs", zoneIDs)
 	request.Var("limit", gqlQueryLimit)
 	request.Var("maxtime", now)
@@ -799,9 +780,6 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 }
 
 func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
-	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
-	s := 60 * time.Second
-	now = now.Truncate(s)
 
 	request := graphql.NewRequest(`query($accountID: String!, $limit: Int!, $date: String!) {
 		viewer {
@@ -834,6 +812,7 @@ func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
 		  }
 	  }`)
 
+	now, _ := GetTimeRange()
 	request.Var("accountID", accountID)
 	request.Var("limit", gqlQueryLimit)
 	request.Var("date", now.Format("2006-01-02"))
