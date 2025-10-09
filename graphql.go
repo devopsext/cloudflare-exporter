@@ -21,8 +21,10 @@ func NewGraphQLClient(http_client *http.Client) *GraphQL {
 	if http_client == nil {
 		http_client = http.DefaultClient
 	}
+	gql_client := graphql.NewClient(cfGraphQLEndpoint, graphql.WithHTTPClient(http_client))
+	gql_client.Log = func(s string) { log.Debug(s) }
 	return &GraphQL{
-		Client: graphql.NewClient(cfGraphQLEndpoint, graphql.WithHTTPClient(http_client)),
+		Client: gql_client,
 		Mu:     &sync.RWMutex{},
 	}
 }

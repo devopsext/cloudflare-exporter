@@ -835,7 +835,6 @@ func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 
-	gql.Client.Log = func(s string) { log.Debug(s) }
 	var resp cloudflareResponseR2Account
 	gql.Mu.RLock()
 	defer gql.Mu.RUnlock()
