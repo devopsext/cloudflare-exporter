@@ -156,6 +156,7 @@ func runExporter() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Debugf("Metrics set: %v", metricsSet)
 	mustRegisterMetrics(metricsSet)
 
 	go func() {
