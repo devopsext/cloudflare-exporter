@@ -1,6 +1,6 @@
 module github.com/lablabs/cloudflare-exporter
 
-go 1.22
+go 1.25
 
 require (
 	github.com/biter777/countries v1.7.4

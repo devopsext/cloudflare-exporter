@@ -56,7 +56,9 @@ The exporter can be configured using env variables or command flags.
 | `LISTEN` |  listen on addr:port (default `:8080`), omit addr to listen on all interfaces |
 | `METRICS_PATH` |  path for metrics, default `/metrics` |
 | `SCRAPE_DELAY` | scrape delay in seconds, default `300` |
+| `SCRAPE_INTERVAL` | scrape interval in seconds (will query cloudflare every SCRAPE_INTERVAL seconds), default `60` |
 | `METRICS_DENYLIST` | (Optional) cloudflare-exporter metrics to not export, comma delimited list of cloudflare-exporter metrics. If not set, all metrics are exported |
+| `ENABLE_PPROF` | (Optional) enable pprof profiling endpoints at `/debug/pprof/`. Accepts `true` or `false`, default `false`. **Warning**: Only enable in development/debugging environments |
 | `ZONE_<NAME>` |  `DEPRECATED since 0.0.5` (optional) Zone ID. Add zones you want to scrape by adding env vars in this format. You can find the zone ids in Cloudflare dashboards. |
 | `LOG_LEVEL` | Set loglevel. Options are error, warn, info, debug. default `error` |
 
@@ -72,7 +74,9 @@ Corresponding flags:
   -listen=":8080": listen on addr:port ( default :8080), omit addr to listen on all interfaces
   -metrics_path="/metrics": path for metrics, default /metrics
   -scrape_delay=300: scrape delay in seconds, defaults to 300
+  -scrape_interval=60: scrape interval in seconds, defaults to 60
   -metrics_denylist="": cloudflare-exporter metrics to not export, comma delimited list
+  -enable_pprof=false: enable pprof profiling endpoints at /debug/pprof/
   -log_level="error": log level(error,warn,info,debug)
 ```
 
@@ -154,6 +158,46 @@ docker run --rm -p 8080:8080 -e CF_API_TOKEN=${CF_API_TOKEN} -e FREE_TIER=true g
 Access help:
 ```
 docker run --rm -p 8080:8080 -i ghcr.io/lablabs/cloudflare_exporter --help
+```
+
+## Development
+
+### Building and Testing
+
+This project uses a Makefile for common development tasks. Available targets:
+
+- `make help` - Show all available targets
+- `make fmt` - Format Go code using `go fmt` and `goimports`
+- `make fmt-check` - Check if code is properly formatted (CI-friendly)
+- `make lint` - Run golangci-lint to check code quality
+- `make check` - Run all checks (formatting + linting)
+- `make build` - Build the binary (runs checks first)
+- `make test` - Run end-to-end tests
+- `make clean` - Remove build artifacts
+
+### Prerequisites
+
+Make sure you have the following tools installed:
+
+```bash
+# Install goimports for import formatting
+go install golang.org/x/tools/cmd/goimports@latest
+
+# Install golangci-lint for linting
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+```
+
+### Common Workflows
+
+```bash
+# Format code and build
+make fmt && make build
+
+# Run all code quality checks
+make check
+
+# Clean and rebuild
+make clean build
 ```
 
 ## Contributing and reporting issues

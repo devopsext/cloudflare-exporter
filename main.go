@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	_ "net/http/pprof" // #nosec G108 - pprof is controlled via enable_pprof flag
 	"runtime"
 	"strings"
 	"sync"
@@ -148,6 +149,15 @@ func runExporter() {
 
 	cfgMetricsPath := viper.GetString("metrics_path")
 
+	// Handle pprof configuration
+	if !viper.GetBool("enable_pprof") {
+		// Remove pprof handlers from default mux if disabled
+		http.DefaultServeMux = http.NewServeMux()
+		log.Info("pprof disabled")
+	} else {
+		log.Warn("pprof enabled - profiling endpoints available at /debug/pprof/")
+	}
+
 	metricsDenylist := []string{}
 	if len(viper.GetString("metrics_denylist")) > 0 {
 		metricsDenylist = strings.Split(viper.GetString("metrics_denylist"), ",")
@@ -159,8 +169,11 @@ func runExporter() {
 	log.Debugf("Metrics set: %v", metricsSet)
 	mustRegisterMetrics(metricsSet)
 
+	scrapeInterval := time.Duration(viper.GetInt("scrape_interval")) * time.Second
+	log.Info("Scrape interval set to ", scrapeInterval)
+
 	go func() {
-		for ; true; <-time.NewTicker(60 * time.Second).C {
+		for ; true; <-time.NewTicker(scrapeInterval).C {
 			go fetchMetrics()
 		}
 	}()
@@ -227,6 +240,10 @@ func main() {
 	viper.BindEnv("scrape_delay")
 	viper.SetDefault("scrape_delay", 300)
 
+	flags.Int("scrape_interval", 60, "scrape interval in seconds, defaults to 60")
+	viper.BindEnv("scrape_interval")
+	viper.SetDefault("scrape_interval", 60)
+
 	flags.Bool("free_tier", false, "scrape only metrics included in free plan")
 	viper.BindEnv("free_tier")
 	viper.SetDefault("free_tier", false)
@@ -242,6 +259,10 @@ func main() {
 	flags.String("log_level", "info", "log level")
 	viper.BindEnv("log_level")
 	viper.SetDefault("log_level", "info")
+
+	flags.Bool("enable_pprof", false, "enable pprof profiling endpoints at /debug/pprof/")
+	viper.BindEnv("enable_pprof")
+	viper.SetDefault("enable_pprof", false)
 
 	viper.BindPFlags(flags)
 

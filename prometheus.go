@@ -453,7 +453,6 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(r2OperationMetricName) {
 		prometheus.MustRegister(r2Operation)
 	}
-
 }
 
 func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup) {
@@ -498,6 +497,7 @@ func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {
 
 	r, err := fetchWorkerTotals(account.ID)
 	if err != nil {
+		log.Error("failed to fetch worker analytics for account ", account.ID, ": ", err)
 		return
 	}
 
@@ -531,6 +531,7 @@ func fetchLogpushAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGr
 	r, err := fetchLogpushAccount(account.ID)
 
 	if err != nil {
+		log.Error("failed to fetch logpush analytics for account ", account.ID, ": ", err)
 		return
 	}
 
@@ -582,6 +583,7 @@ func fetchLogpushAnalyticsForZone(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	r, err := fetchLogpushZone(zoneIDs)
 
 	if err != nil {
+		log.Error("failed to fetch logpush analytics for zones: ", err)
 		return
 	}
 
@@ -610,6 +612,7 @@ func fetchZoneColocationAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 
 	r, err := fetchColoTotals(zoneIDs)
 	if err != nil {
+		log.Error("failed to fetch colocation analytics for zones: ", err)
 		return
 	}
 	for _, z := range r.Viewer.Zones {
@@ -639,6 +642,7 @@ func fetchZoneAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 
 	r, err := fetchZoneTotals(zoneIDs)
 	if err != nil {
+		log.Error("failed to fetch zone analytics: ", err)
 		return
 	}
 
@@ -790,6 +794,7 @@ func fetchLoadBalancerAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 
 	l, err := fetchLoadBalancerTotals(zoneIDs)
 	if err != nil {
+		log.Error("failed to fetch load balancer analytics: ", err)
 		return
 	}
 	for _, lb := range l.Viewer.Zones {
