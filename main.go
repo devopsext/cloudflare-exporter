@@ -31,9 +31,7 @@ import (
 // 	cfgMetricsDenylist = ""
 // )
 
-var (
-	cloudflareAPI *cloudflare.API
-)
+var cloudflareAPI *cloudflare.API
 
 func getTargetZones() []string {
 	var zoneIDs []string
@@ -64,7 +62,7 @@ func filterZones(all []cloudflare.Zone, target []string) []cloudflare.Zone {
 		for _, z := range all {
 			if tz == z.ID {
 				filtered = append(filtered, z)
-				log.Info("Filtering zone: ", z.ID, " ", z.Name)
+				log.Debug("Filtering zone: ", z.ID, " ", z.Name)
 			}
 		}
 	}
@@ -217,7 +215,7 @@ func runExporter() {
 }
 
 func main() {
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "cloudflare_exporter",
 		Short: "Prometheus exporter exposing Cloudflare Analytics dashboard data on a per-zone basis, as well as Worker metrics",
 		Run: func(_ *cobra.Command, _ []string) {
