@@ -1,28 +1,33 @@
 # CloudFlare Prometheus exporter
+
 [<img src="ll-logo.png">](https://lablabs.io/)
 
-We help companies build, run, deploy and scale software and infrastructure by embracing the right technologies and principles. Check out our website at https://lablabs.io/
+We help companies build, run, deploy and scale software and infrastructure by embracing the right technologies and principles. Check out our website at <https://lablabs.io/>
 
 ---
 
 ## Description
+
 Prometheus exporter exposing Cloudflare Analytics dashboard data on a per-zone basis, as well as Worker metrics.
-The exporter is also able to scrape Zone metrics by Colocations (https://www.cloudflare.com/network/).
+The exporter is also able to scrape Zone metrics by Colocations (<https://www.cloudflare.com/network/>).
 
 ## Grafana Dashboard
+
 ![Dashboard](https://i.ibb.co/HDsqDF1/cf-exporter.png)
 
-Our public dashboard is available at https://grafana.com/grafana/dashboards/13133
-
+Our public dashboard is available at <https://grafana.com/grafana/dashboards/13133>
 
 ## Authentication
+
 Authentication towards the Cloudflare API can be done in two ways:
 
 ### API token
+
 The preferred way of authenticating is with an API token, for which the scope can be configured at the Cloudflare
 dashboard.
 
 Required authentication scopes:
+
 - `Zone/Analytics:Read` is required for zone-level metrics
 - `Account/Account Analytics:Read` is required for Worker metrics
 - `Account/Account Settings:Read` is required for Worker metrics (for listing accessible accounts, scraping all available
@@ -35,19 +40,21 @@ To authenticate this way, only set `CF_API_TOKEN` (omit `CF_API_EMAIL` and `CF_A
 [Shortcut to create the API token](https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22account_analytics%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22analytics%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22firewall_services%22%2C%22type%22%3A%22read%22%7D%5D&name=Cloudflare+Exporter&accountId=*&zoneId=all)
 
 ### User email + API key
+
 To authenticate with user email + API key, use the `Global API Key` from the Cloudflare dashboard.
 Beware that this key authenticates with write access to every Cloudflare resource.
 
 To authenticate this way, set both `CF_API_KEY` and `CF_API_EMAIL`.
 
 ## Configuration
+
 The exporter can be configured using env variables or command flags.
 
 | **KEY** | **description** |
 |-|-|
-| `CF_API_EMAIL` |  user email (see https://support.cloudflare.com/hc/en-us/articles/200167836-Managing-API-Tokens-and-Keys) |
+| `CF_API_EMAIL` |  user email (see <https://support.cloudflare.com/hc/en-us/articles/200167836-Managing-API-Tokens-and-Keys>) |
 | `CF_API_KEY` |  API key associated with email (`CF_API_EMAIL` is required if this is set)|
-| `CF_API_TOKEN` |  API authentication token (recommended before API key + email. Version 0.0.5+. see https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth) |
+| `CF_API_TOKEN` |  API authentication token (recommended before API key + email. Version 0.0.5+. see <https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth>) |
 | `CF_ZONES` |  (Optional) cloudflare zones to export, comma delimited list of zone ids. If not set, all zones from account are exported |
 | `CF_EXCLUDE_ZONES` |  (Optional) cloudflare zones to exclude, comma delimited list of zone ids. If not set, no zones from account are excluded |
 | `FREE_TIER` | (Optional) scrape only metrics included in free plan. Accepts `true` or `false`, default `false`. |
@@ -61,6 +68,7 @@ The exporter can be configured using env variables or command flags.
 | `ZONE_<NAME>` |  `DEPRECATED since 0.0.5` (optional) Zone ID. Add zones you want to scrape by adding env vars in this format. You can find the zone ids in Cloudflare dashboards. |
 
 Corresponding flags:
+
 ```
   -cf_api_email="": cloudflare api email, works with api_key flag
   -cf_api_key="": cloudflare api key, works with api_email flag
@@ -80,6 +88,7 @@ Corresponding flags:
 Note: `ZONE_<name>` configuration is not supported as flag.
 
 ## List of available metrics
+
 ```
 # HELP cloudflare_worker_cpu_time CPU time quantiles by script name
 # HELP cloudflare_worker_duration Duration quantiles by script name (GB*s)
@@ -116,6 +125,7 @@ Note: `ZONE_<name>` configuration is not supported as flag.
 ```
 
 ## Helm chart repository
+
 To deploy the exporter into Kubernetes, we recommend using our manager Helm repository:
 
 ```
@@ -124,35 +134,49 @@ helm install cloudflare-exporter/cloudflare-exporter
 ```
 
 ## Docker
+
 ### Build
+
 Images are available at [Github Container Registry](https://github.com/lablabs/cloudflare-exporter/pkgs/container/cloudflare_exporter)
 
-```
-docker build -t ghcr.io/lablabs/cloudflare_exporter .
+To speed up multi-arch image builds and avoid burden of maintaining a Dockerfile, we are using [ko](https://ko.build/).
+
+For more information on how to push the container image to your remote repository take a look at the [official docs](https://ko.build/get-started/).
+
+To build localy use `KO_DOCKER_REPO=ko.local`
+
+```shell
+ko build .
 ```
 
 ### Run
+
 Authenticating with email + API key:
+
 ```
 docker run --rm -p 8080:8080 -e CF_API_KEY=${CF_API_KEY} -e CF_API_EMAIL=${CF_API_EMAIL} ghcr.io/lablabs/cloudflare_exporter
 ```
 
 API token:
+
 ```
 docker run --rm -p 8080:8080 -e CF_API_TOKEN=${CF_API_TOKEN} ghcr.io/lablabs/cloudflare_exporter
 ```
 
 Configure zones and listening port:
+
 ```
 docker run --rm -p 8080:8081 -e CF_API_TOKEN=${CF_API_TOKEN} -e CF_ZONES=zoneid1,zoneid2,zoneid3 -e LISTEN=:8081 ghcr.io/lablabs/cloudflare_exporter
 ```
 
 Disable non-free metrics:
+
 ```
 docker run --rm -p 8080:8080 -e CF_API_TOKEN=${CF_API_TOKEN} -e FREE_TIER=true ghcr.io/lablabs/cloudflare_exporter
 ```
 
 Access help:
+
 ```
 docker run --rm -p 8080:8080 -i ghcr.io/lablabs/cloudflare_exporter --help
 ```
@@ -198,6 +222,7 @@ make clean build
 ```
 
 ## Contributing and reporting issues
+
 Feel free to create an issue in this repository if you have questions, suggestions or feature requests.
 
 ### Validation, linters and pull-requests
@@ -212,6 +237,7 @@ check your code before you will create pull-requests. See
 details.
 
 ## License
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 See [LICENSE](LICENSE) for full details.
