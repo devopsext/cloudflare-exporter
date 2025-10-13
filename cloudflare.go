@@ -283,7 +283,8 @@ func fetchZones() []cloudflare.Zone {
 	ctx := context.Background()
 	z, err := cloudflareAPI.ListZones(ctx)
 	if err != nil {
-		log.Fatalf("Error fetching zones: %s", err)
+		log.Errorf("Error fetching zones: %s", err)
+		return nil
 	}
 
 	return z
@@ -295,7 +296,8 @@ func fetchFirewallRules(zoneID string) map[string]string {
 		cloudflare.ZoneIdentifier(zoneID),
 		cloudflare.FirewallRuleListParams{})
 	if err != nil {
-		log.Fatalf("Error fetching firewall rules: %s", err)
+		log.Errorf("Error fetching firewall rules: %s", err)
+		return nil
 	}
 	firewallRulesMap := make(map[string]string)
 
@@ -305,13 +307,15 @@ func fetchFirewallRules(zoneID string) map[string]string {
 
 	listOfRulesets, err := cloudflareAPI.ListRulesets(ctx, cloudflare.ZoneIdentifier(zoneID), cloudflare.ListRulesetsParams{})
 	if err != nil {
-		log.Fatalf("Error listing rulesets: %s", err)
+		log.Errorf("Error listing rulesets: %s", err)
+		return nil
 	}
 	for _, rulesetDesc := range listOfRulesets {
 		if rulesetDesc.Phase == "http_request_firewall_managed" {
 			ruleset, err := cloudflareAPI.GetRuleset(ctx, cloudflare.ZoneIdentifier(zoneID), rulesetDesc.ID)
 			if err != nil {
-				log.Fatalf("Error fetching ruleset for firewall rules: %s", err)
+				log.Errorf("Error fetching ruleset for firewall rules: %s", err)
+				return nil
 			}
 			for _, rule := range ruleset.Rules {
 				firewallRulesMap[rule.ID] = rule.Description
@@ -321,7 +325,8 @@ func fetchFirewallRules(zoneID string) map[string]string {
 		if rulesetDesc.Phase == "http_request_firewall_custom" {
 			ruleset, err := cloudflareAPI.GetRuleset(ctx, cloudflare.ZoneIdentifier(zoneID), rulesetDesc.ID)
 			if err != nil {
-				log.Fatalf("Error fetching custom firewall rulesets: %s", err)
+				log.Errorf("Error fetching custom firewall rulesets: %s", err)
+				return nil
 			}
 			for _, rule := range ruleset.Rules {
 				firewallRulesMap[rule.ID] = rule.Description
@@ -336,7 +341,8 @@ func fetchAccounts() []cloudflare.Account {
 	ctx := context.Background()
 	a, _, err := cloudflareAPI.Accounts(ctx, cloudflare.AccountsListParams{PaginationOptions: cloudflare.PaginationOptions{PerPage: 100}})
 	if err != nil {
-		log.Fatalf("Error fetching accounts: %s", err)
+		log.Errorf("Error fetching accounts: %s", err)
+		return nil
 	}
 
 	return a
