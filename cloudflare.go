@@ -373,7 +373,7 @@ func fetchFirewallRules(zoneID string) map[string]string {
 	})
 	if err != nil {
 		log.Errorf("error fetching firewall rules, ZoneID:%s, Err:%v", zoneID, err)
-		return map[string]string{}
+		return nil
 	}
 
 	firewallRulesMap := make(map[string]string)

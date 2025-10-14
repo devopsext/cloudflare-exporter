@@ -68,7 +68,7 @@ func filterZones(all []cfzones.Zone, target []string) []cfzones.Zone {
 		for _, z := range all {
 			if tz == z.ID {
 				filtered = append(filtered, z)
-				log.Info("Filtering zone: ", z.ID, " ", z.Name)
+				log.Debug("Filtering zone: ", z.ID, " ", z.Name)
 			}
 		}
 	}
@@ -199,7 +199,7 @@ func runExporter() {
 }
 
 func main() {
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "cloudflare_exporter",
 		Short: "Prometheus exporter exposing Cloudflare Analytics dashboard data on a per-zone basis, as well as Worker metrics",
 		Run: func(_ *cobra.Command, _ []string) {
