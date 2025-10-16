@@ -297,8 +297,19 @@ func fetchLoadblancerPools(account cfaccounts.Account) []cfload_balancers.Pool {
 		return nil
 	}
 
+	seenIDs := make(map[string]struct{})
 	for page.Next() {
-		cf_pools = append(cf_pools, page.Current())
+		if page.Err() != nil {
+			log.Errorf("error during paging pools: %v", page.Err())
+			break
+		}
+		pool := page.Current()
+		if _, exists := seenIDs[pool.ID]; exists {
+			log.Errorf("fetchLoadbalancerPools: duplicate pool ID detected (%s), breaking loop", pool.ID)
+			break
+		}
+		seenIDs[pool.ID] = struct{}{}
+		cf_pools = append(cf_pools, pool)
 	}
 
 	return cf_pools
@@ -316,8 +327,19 @@ func getAccountZoneList(accountID string) ([]cfzones.Zone, error) {
 		return nil, page.Err()
 	}
 
+	seenIDs := make(map[string]struct{})
 	for page.Next() {
-		zoneList = append(zoneList, page.Current())
+		if page.Err() != nil {
+			log.Errorf("error during paging zoneList: %v", page.Err())
+			break
+		}
+		zone := page.Current()
+		if _, exists := seenIDs[zone.ID]; exists {
+			log.Errorf("getAccountZoneList: duplicate zone ID detected (%s), breaking loop", zone.ID)
+			break
+		}
+		seenIDs[zone.ID] = struct{}{}
+		zoneList = append(zoneList, zone)
 	}
 
 	return zoneList, nil
@@ -428,10 +450,20 @@ func fetchAccounts() []cfaccounts.Account {
 		return nil
 	}
 
+	seenIDs := make(map[string]struct{})
 	for page.Next() {
-		cfAccounts = append(cfAccounts, page.Current())
+		if page.Err() != nil {
+			log.Errorf("error during paging accounts: %v", page.Err())
+			break
+		}
+		account := page.Current()
+		if _, exists := seenIDs[account.ID]; exists {
+			log.Errorf("fetchAccounts: duplicate account ID detected (%s), breaking loop", account.ID)
+			break
+		}
+		seenIDs[account.ID] = struct{}{}
+		cfAccounts = append(cfAccounts, account)
 	}
-
 	return cfAccounts
 }
 
