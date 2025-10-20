@@ -827,6 +827,34 @@ func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
 	return &resp, nil
 }
 
+func fetchCloudflareTunnels(accountID string) []cloudflare.Tunnel {
+	ctx := context.Background()
+	listOfTunnels, _, err := cloudflareAPI.ListTunnels(
+		ctx,
+		cloudflare.AccountIdentifier(accountID),
+		cloudflare.TunnelListParams{IsDeleted: new(bool)})
+	if err != nil {
+		log.Errorf("Error fetching tunnels: %s", err)
+		return nil
+	}
+
+	return listOfTunnels
+}
+
+func fetchCloudflareTunnelConnections(accountID string, tunnelID string) []cloudflare.Connection {
+	ctx := context.Background()
+	listOfConnections, err := cloudflareAPI.ListTunnelConnections(
+		ctx,
+		cloudflare.AccountIdentifier(accountID),
+		tunnelID)
+	if err != nil {
+		log.Errorf("Error fetching tunnel '%s' connections: %s", tunnelID, err)
+		return nil
+	}
+
+	return listOfConnections
+}
+
 func findZoneAccountName(zones []cloudflare.Zone, ID string) (string, string) {
 	for _, z := range zones {
 		if z.ID == ID {

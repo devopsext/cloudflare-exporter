@@ -55,6 +55,9 @@ const (
 	r2StorageTotalMetricName                     MetricName = "cloudflare_r2_storage_total_bytes"
 	r2StorageMetricName                          MetricName = "cloudflare_r2_storage_bytes"
 	r2OperationMetricName                        MetricName = "cloudflare_r2_operation_count"
+	tunnelInfoMetricName                         MetricName = "cloudflare_tunnel_info"
+	tunnelHealthStatusMetricName                 MetricName = "cloudflare_tunnel_health_status"
+	tunnelConnectorInfoMetricName                MetricName = "cloudflare_tunnel_connector_info"
 )
 
 type MetricsSet map[MetricName]struct{}
@@ -281,6 +284,21 @@ var (
 		Name: r2OperationMetricName.String(),
 		Help: "Number of operations performed by R2",
 	}, []string{"account", "bucket", "operation"})
+
+	tunnelInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: tunnelInfoMetricName.String(),
+		Help: "Reports Cloudflare Tunnel details",
+	}, []string{"account", "tunnel_id", "tunnel_name", "tunnel_type"})
+
+	tunnelHealthStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: tunnelHealthStatusMetricName.String(),
+		Help: "Reports the health of a Cloudflare Tunnel, 0 for unhealthy, 1 for healthy, 2 for degraded, 3 for inactive",
+	}, []string{"account", "tunnel_id"})
+
+	tunnelConnectorInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: tunnelConnectorInfoMetricName.String(),
+		Help: "Reports Cloudflare Tunnel connector details",
+	}, []string{"account", "tunnel_id", "client_id", "client_version", "origin_ip"})
 )
 
 func buildAllMetricsSet() MetricsSet {
@@ -319,6 +337,9 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(logpushFailedJobsZoneMetricName)
 	allMetricsSet.Add(r2StorageTotalMetricName)
 	allMetricsSet.Add(r2OperationMetricName)
+	allMetricsSet.Add(tunnelInfoMetricName)
+	allMetricsSet.Add(tunnelHealthStatusMetricName)
+	allMetricsSet.Add(tunnelConnectorInfoMetricName)
 	return allMetricsSet
 }
 
@@ -440,6 +461,15 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	}
 	if !deniedMetrics.Has(r2OperationMetricName) {
 		prometheus.MustRegister(r2Operation)
+	}
+	if !deniedMetrics.Has(tunnelInfoMetricName) {
+		prometheus.MustRegister(tunnelInfo)
+	}
+	if !deniedMetrics.Has(tunnelHealthStatusMetricName) {
+		prometheus.MustRegister(tunnelHealthStatus)
+	}
+	if !deniedMetrics.Has(tunnelConnectorInfoMetricName) {
+		prometheus.MustRegister(tunnelConnectorInfo)
 	}
 }
 
@@ -781,5 +811,75 @@ func addLoadBalancingRequestsAdaptive(z *lbResp, name string, account string) {
 					"pool_name":          p.PoolName,
 				}).Set(float64(p.Healthy))
 		}
+	}
+}
+
+func fetchZeroTrustAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	addCloudflareTunnelStatus(account)
+}
+
+func addCloudflareTunnelStatus(account cloudflare.Account) {
+	tunnels := fetchCloudflareTunnels(account.ID)
+	for _, t := range tunnels {
+		tunnelInfo.With(
+			prometheus.Labels{
+				"account":     account.Name,
+				"tunnel_id":   t.ID,
+				"tunnel_name": t.Name,
+				"tunnel_type": t.TunnelType,
+			}).Set(float64(1))
+
+		tunnelHealthStatus.With(
+			prometheus.Labels{
+				"account":   account.Name,
+				"tunnel_id": t.ID,
+			}).Set(float64(getCloudflareTunnelStatusValue(t.Status)))
+
+		// Each client/connector can open many connections to the Cloudflare edge,
+		// we opt to not expose metrics for each individual connection. We do expose
+		// an informational metric for each client/connector however.
+		connections := fetchCloudflareTunnelConnections(account.ID, t.ID)
+		for _, tc := range connections {
+			clients := make(map[string]struct{})
+			for _, c := range tc.Connections {
+				if _, exists := clients[c.ClientID]; !exists {
+					clients[c.ClientID] = struct{}{}
+
+					tunnelConnectorInfo.With(
+						prometheus.Labels{
+							"account":        account.Name,
+							"tunnel_id":      t.ID,
+							"client_id":      c.ClientID,
+							"client_version": c.ClientVersion,
+							"origin_ip":      c.OriginIP,
+						}).Set(float64(1))
+				}
+			}
+		}
+	}
+}
+
+// The status of the tunnel.
+// Valid values are:
+//   - inactive (tunnel has never been run)
+//   - degraded (tunnel is active and able to serve traffic but in an unhealthy state)
+//   - healthy (tunnel is active and able to serve traffic)
+//   - down (tunnel can not serve traffic as it has no connections to the Cloudflare Edge).
+func getCloudflareTunnelStatusValue(status string) uint8 {
+	switch status {
+	case "inactive":
+		return 3
+	case "degraded":
+		return 2
+	case "healthy":
+		return 1
+	case "down":
+		return 0
+	default:
+		// Undefined status value returned by the API
+		return 255
 	}
 }

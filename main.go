@@ -107,6 +107,7 @@ func fetchMetrics() {
 		go fetchWorkerAnalytics(a, &wg)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
 		go fetchR2StorageForAccount(a, &wg)
+		go fetchZeroTrustAnalyticsForAccount(a, &wg)
 	}
 
 	// Make requests in groups of cfgBatchSize to avoid rate limit
