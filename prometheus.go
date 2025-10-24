@@ -488,7 +488,6 @@ func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup)
 				}).Set(float64(healthy))
 		}
 	}
-
 }
 
 func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {

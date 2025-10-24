@@ -18,14 +18,14 @@ type GraphQL struct {
 	Mu     *sync.RWMutex
 }
 
-func NewGraphQLClient(http_client *http.Client) *GraphQL {
-	if http_client == nil {
-		http_client = http.DefaultClient
+func NewGraphQLClient(httpClient *http.Client) *GraphQL {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
 	}
-	gql_client := graphql.NewClient(cfGraphQLEndpoint, graphql.WithHTTPClient(http_client))
-	gql_client.Log = func(s string) { log.Debug(s) }
+	gqlClient := graphql.NewClient(cfGraphQLEndpoint, graphql.WithHTTPClient(httpClient))
+	gqlClient.Log = func(s string) { log.Debug(s) }
 	return &GraphQL{
-		Client: gql_client,
+		Client: gqlClient,
 		Mu:     &sync.RWMutex{},
 	}
 }

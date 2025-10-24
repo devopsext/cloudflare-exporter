@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	freePlanId      = "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	freePlanID      = "0feeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	apiPerPageLimit = 999
 )
 
@@ -284,8 +284,7 @@ type lbResp struct {
 }
 
 func fetchLoadblancerPools(account cfaccounts.Account) []cfload_balancers.Pool {
-
-	var cf_pools []cfload_balancers.Pool
+	var cfPools []cfload_balancers.Pool
 	ctx, cancel := context.WithTimeout(context.Background(), cftimeout)
 	defer cancel()
 	page := cfclient.LoadBalancers.Pools.ListAutoPaging(ctx,
@@ -309,10 +308,10 @@ func fetchLoadblancerPools(account cfaccounts.Account) []cfload_balancers.Pool {
 			break
 		}
 		seenIDs[pool.ID] = struct{}{}
-		cf_pools = append(cf_pools, pool)
+		cfPools = append(cfPools, pool)
 	}
 
-	return cf_pools
+	return cfPools
 }
 
 func getAccountZoneList(accountID string) ([]cfzones.Zone, error) {
@@ -346,7 +345,6 @@ func getAccountZoneList(accountID string) ([]cfzones.Zone, error) {
 }
 
 func fetchZones(accounts []cfaccounts.Account) []cfzones.Zone {
-
 	var zones []cfzones.Zone
 
 	for _, account := range accounts {
@@ -389,7 +387,6 @@ func getRuleSetsList(params cfrulesets.RulesetListParams) ([]cfrulesets.RulesetL
 }
 
 func fetchFirewallRules(zoneID string) map[string]string {
-
 	listOfRulesets, err := getRuleSetsList(cfrulesets.RulesetListParams{
 		ZoneID: cf.F(zoneID),
 	})
@@ -468,7 +465,6 @@ func fetchAccounts() []cfaccounts.Account {
 }
 
 func fetchZoneTotals(zoneIDs []string) (*cloudflareResponse, error) {
-
 	request := graphql.NewRequest(`
 query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 	viewer {
@@ -589,7 +585,6 @@ query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 }
 
 func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
-
 	request := graphql.NewRequest(`
 	query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 		viewer {
@@ -640,7 +635,6 @@ func fetchColoTotals(zoneIDs []string) (*cloudflareResponseColo, error) {
 }
 
 func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
-
 	request := graphql.NewRequest(`
 	query ($accountID: String!, $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 		viewer {
@@ -695,7 +689,6 @@ func fetchWorkerTotals(accountID string) (*cloudflareResponseAccts, error) {
 }
 
 func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
-
 	request := graphql.NewRequest(`
 	query ($zoneIDs: [String!], $mintime: Time!, $maxtime: Time!, $limit: Int!) {
 		viewer {
@@ -767,7 +760,6 @@ func fetchLoadBalancerTotals(zoneIDs []string) (*cloudflareResponseLb, error) {
 }
 
 func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, error) {
-
 	request := graphql.NewRequest(`query($accountID: String!, $limit: Int!, $mintime: Time!, $maxtime: Time!) {
 		viewer {
 		  accounts(filter: {accountTag : $accountID }) {
@@ -813,7 +805,6 @@ func fetchLogpushAccount(accountID string) (*cloudflareResponseLogpushAccount, e
 }
 
 func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) {
-
 	request := graphql.NewRequest(`query($zoneIDs: String!, $limit: Int!, $mintime: Time!, $maxtime: Time!) {
 		viewer {
 			zones(filter: {zoneTag_in : $zoneIDs }) {
@@ -860,7 +851,6 @@ func fetchLogpushZone(zoneIDs []string) (*cloudflareResponseLogpushZone, error) 
 }
 
 func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
-
 	request := graphql.NewRequest(`query($accountID: String!, $limit: Int!, $date: String!) {
 		viewer {
 		  accounts(filter: {accountTag : $accountID }) {
@@ -932,7 +922,6 @@ func extractZoneIDs(zones []cfzones.Zone) []string {
 }
 
 func filterNonFreePlanZones(zones []cfzones.Zone) (filteredZones []cfzones.Zone) {
-
 	var zoneIDs []string
 
 	for _, z := range zones {
@@ -941,7 +930,7 @@ func filterNonFreePlanZones(zones []cfzones.Zone) (filteredZones []cfzones.Zone)
 			log.Error(err)
 			continue
 		}
-		if extraFields["id"] == freePlanId {
+		if extraFields["id"] == freePlanID {
 			continue
 		}
 		if !contains(zoneIDs, z.ID) {

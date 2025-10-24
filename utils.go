@@ -8,7 +8,6 @@ import (
 )
 
 func GetTimeRange() (now time.Time, now1mAgo time.Time) {
-
 	now = time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
 	s := 60 * time.Second
 	now = now.Truncate(s)
