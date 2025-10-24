@@ -164,7 +164,7 @@ func runExporter() {
 	}
 	metricsSet, err := buildFilteredMetricsSet(metricsDenylist)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error building metrics set: %v", err)
 	}
 	log.Debugf("Metrics set: %v", metricsSet)
 	mustRegisterMetrics(metricsSet)
