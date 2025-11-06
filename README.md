@@ -34,6 +34,7 @@ Required authentication scopes:
   Workers included in authentication scope)
 - `Zone/Firewall Services:Read` is required to fetch zone rule name for `cloudflare_zone_firewall_events_count` metric
 - `Account/Account Rulesets:Read` is required to fetch account rule name for `cloudflare_zone_firewall_events_count` metric
+- `Account:Load Balancing: Monitors and Pools:Read` is required to fetch pools origin health status `cloudflare_pool_origin_health_status` metric
 
 To authenticate this way, only set `CF_API_TOKEN` (omit `CF_API_EMAIL` and `CF_API_KEY`)
 
@@ -57,15 +58,16 @@ The exporter can be configured using env variables or command flags.
 | `CF_API_TOKEN` |  API authentication token (recommended before API key + email. Version 0.0.5+. see <https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth>) |
 | `CF_ZONES` |  (Optional) cloudflare zones to export, comma delimited list of zone ids. If not set, all zones from account are exported |
 | `CF_EXCLUDE_ZONES` |  (Optional) cloudflare zones to exclude, comma delimited list of zone ids. If not set, no zones from account are excluded |
+| `CF_TIMEOUT` | Set cloudflare request timeout. Default 10 seconds |
 | `FREE_TIER` | (Optional) scrape only metrics included in free plan. Accepts `true` or `false`, default `false`. |
 | `LISTEN` |  listen on addr:port (default `:8080`), omit addr to listen on all interfaces |
 | `METRICS_PATH` |  path for metrics, default `/metrics` |
 | `SCRAPE_DELAY` | scrape delay in seconds, default `300` |
 | `SCRAPE_INTERVAL` | scrape interval in seconds (will query cloudflare every SCRAPE_INTERVAL seconds), default `60` |
-| `CF_BATCH_SIZE` | cloudflare request zones batch size (1 - 10), default `10` |
 | `METRICS_DENYLIST` | (Optional) cloudflare-exporter metrics to not export, comma delimited list of cloudflare-exporter metrics. If not set, all metrics are exported |
 | `ENABLE_PPROF` | (Optional) enable pprof profiling endpoints at `/debug/pprof/`. Accepts `true` or `false`, default `false`. **Warning**: Only enable in development/debugging environments |
 | `ZONE_<NAME>` |  `DEPRECATED since 0.0.5` (optional) Zone ID. Add zones you want to scrape by adding env vars in this format. You can find the zone ids in Cloudflare dashboards. |
+| `LOG_LEVEL` | Set loglevel. Options are error, warn, info, debug. default `error` |
 
 Corresponding flags:
 
@@ -75,14 +77,15 @@ Corresponding flags:
   -cf_api_token="": cloudflare api token (version 0.0.5+, preferred)
   -cf_zones="": cloudflare zones to export, comma delimited list
   -cf_exclude_zones="": cloudflare zones to exclude, comma delimited list
+  -cf_timeout="10s": cloudflare request timeout, default 10 seconds
   -free_tier=false: scrape only metrics included in free plan, default false
   -listen=":8080": listen on addr:port ( default :8080), omit addr to listen on all interfaces
   -metrics_path="/metrics": path for metrics, default /metrics
   -scrape_delay=300: scrape delay in seconds, defaults to 300
   -scrape_interval=60: scrape interval in seconds, defaults to 60
-  -cf_batch_size=10: cloudflare zones batch size (1-10)
   -metrics_denylist="": cloudflare-exporter metrics to not export, comma delimited list
   -enable_pprof=false: enable pprof profiling endpoints at /debug/pprof/
+  -log_level="error": log level(error,warn,info,debug)
 ```
 
 Note: `ZONE_<name>` configuration is not supported as flag.

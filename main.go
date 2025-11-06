@@ -1,9 +1,9 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	_ "net/http/pprof" // #nosec G108 - pprof is controlled via enable_pprof flag
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +13,17 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/cloudflare/cloudflare-go"
-	log "github.com/sirupsen/logrus"
+	cf "github.com/cloudflare/cloudflare-go/v4"
+	cfoption "github.com/cloudflare/cloudflare-go/v4/option"
+	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
+	"github.com/sirupsen/logrus"
+)
+
+var (
+	cfclient  *cf.Client
+	cftimeout time.Duration
+	gql       *GraphQL
+	log       = logrus.New()
 )
 
 // var (
@@ -27,11 +36,8 @@ import (
 // 	cfgExcludeZones    = ""
 // 	cfgScrapeDelay     = 300
 // 	cfgFreeTier        = false
-// 	cfgBatchSize       = 10
 // 	cfgMetricsDenylist = ""
 // )
-
-var cloudflareAPI *cloudflare.API
 
 func getTargetZones() []string {
 	var zoneIDs []string
@@ -51,8 +57,8 @@ func getExcludedZones() []string {
 	return zoneIDs
 }
 
-func filterZones(all []cloudflare.Zone, target []string) []cloudflare.Zone {
-	var filtered []cloudflare.Zone
+func filterZones(all []cfzones.Zone, target []string) []cfzones.Zone {
+	var filtered []cfzones.Zone
 
 	if (len(target)) == 0 {
 		return all
@@ -79,8 +85,8 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Zone {
-	var filtered []cloudflare.Zone
+func filterExcludedZones(all []cfzones.Zone, exclude []string) []cfzones.Zone {
+	var filtered []cfzones.Zone
 
 	if (len(exclude)) == 0 {
 		return all
@@ -99,31 +105,41 @@ func filterExcludedZones(all []cloudflare.Zone, exclude []string) []cloudflare.Z
 
 func fetchMetrics() {
 	var wg sync.WaitGroup
-	zones := fetchZones()
 	accounts := fetchAccounts()
-	filteredZones := filterExcludedZones(filterZones(zones, getTargetZones()), getExcludedZones())
 
 	for _, a := range accounts {
 		go fetchWorkerAnalytics(a, &wg)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
 		go fetchR2StorageForAccount(a, &wg)
+		go fetchLoadblancerPoolsHealth(a, &wg)
 	}
 
-	// Make requests in groups of cfgBatchSize to avoid rate limit
-	// 10 is the maximum amount of zones you can request at once
-	for len(filteredZones) > 0 {
-		sliceLength := viper.GetInt("cf_batch_size")
-		if len(filteredZones) < viper.GetInt("cf_batch_size") {
-			sliceLength = len(filteredZones)
+	zones := fetchZones(accounts)
+	tzones := getTargetZones()
+	fzones := filterZones(zones, tzones)
+	ezones := getExcludedZones()
+	filteredZones := filterExcludedZones(fzones, ezones)
+	if !viper.GetBool("free_tier") {
+		filteredZones = filterNonFreePlanZones(filteredZones)
+	}
+
+	zoneCount := len(filteredZones)
+	if zoneCount > 0 && zoneCount <= cfgraphqlreqlimit {
+		go fetchZoneAnalytics(filteredZones, &wg)
+		go fetchZoneColocationAnalytics(filteredZones, &wg)
+		go fetchLoadBalancerAnalytics(filteredZones, &wg)
+		go fetchLogpushAnalyticsForZone(filteredZones, &wg)
+	} else if zoneCount > cfgraphqlreqlimit {
+		for s := 0; s < zoneCount; s += cfgraphqlreqlimit {
+			e := s + cfgraphqlreqlimit
+			if e > zoneCount {
+				e = zoneCount
+			}
+			go fetchZoneAnalytics(filteredZones[s:e], &wg)
+			go fetchZoneColocationAnalytics(filteredZones[s:e], &wg)
+			go fetchLoadBalancerAnalytics(filteredZones[s:e], &wg)
+			go fetchLogpushAnalyticsForZone(filteredZones[s:e], &wg)
 		}
-
-		targetZones := filteredZones[:sliceLength]
-		filteredZones = filteredZones[len(targetZones):]
-
-		go fetchZoneAnalytics(targetZones, &wg)
-		go fetchZoneColocationAnalytics(targetZones, &wg)
-		go fetchLoadBalancerAnalytics(targetZones, &wg)
-		go fetchLogpushAnalyticsForZone(targetZones, &wg)
 	}
 
 	wg.Wait()
@@ -141,46 +157,13 @@ func runExporter() {
 		log.Warn("pprof enabled - profiling endpoints available at /debug/pprof/")
 	}
 
-	if len(viper.GetString("cf_api_token")) == 0 && (len(viper.GetString("cf_api_email")) == 0 || len(viper.GetString("cf_api_key")) == 0) {
-		log.Fatal("Please provide CF_API_KEY+CF_API_EMAIL or CF_API_TOKEN")
-	}
-	if viper.GetInt("cf_batch_size") < 1 || viper.GetInt("cf_batch_size") > 10 {
-		log.Fatal("CF_BATCH_SIZE must be between 1 and 10")
-	}
-	customFormatter := new(log.TextFormatter)
-	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
-	log.SetFormatter(customFormatter)
-	customFormatter.FullTimestamp = true
-	logLevel, err := log.ParseLevel(viper.GetString("log_level"))
-	if err != nil {
-		log.Fatalf("Invalid log level: %s", viper.GetString("log_level"))
-	}
-	log.SetLevel(logLevel)
-
-	if len(viper.GetString("cf_api_token")) > 0 {
-		cloudflareAPI, err = cloudflare.NewWithAPIToken(viper.GetString("cf_api_token"))
-	} else {
-		cloudflareAPI, err = cloudflare.New(viper.GetString("cf_api_key"), viper.GetString("cf_api_email"))
-	}
-	if err != nil {
-		log.Fatalf("Error creating Cloudflare API client: %s", err)
-	}
-
-	if len(viper.GetString("cf_api_token")) > 0 {
-		status, err := cloudflareAPI.VerifyAPIToken(context.Background())
-		if err != nil {
-			log.Fatalf("Error creating Cloudflare API client: %s", err)
-		}
-		log.Debugf("API Token status: %s", status.Status)
-	}
-
-	var metricsDenylist []string
+	metricsDenylist := []string{}
 	if len(viper.GetString("metrics_denylist")) > 0 {
 		metricsDenylist = strings.Split(viper.GetString("metrics_denylist"), ",")
 	}
 	metricsSet, err := buildFilteredMetricsSet(metricsDenylist)
 	if err != nil {
-		log.Fatalf("Error building metrics set: %s", err)
+		log.Fatalf("Error building metrics set: %v", err)
 	}
 	log.Debugf("Metrics set: %v", metricsSet)
 	mustRegisterMetrics(metricsSet)
@@ -231,7 +214,7 @@ func main() {
 	viper.BindEnv("listen")
 	viper.SetDefault("listen", ":8080")
 
-	flags.String("metrics_path", "/metrics", "path for metrics")
+	flags.String("metrics_path", "/metrics", "path for metrics, default /metrics")
 	viper.BindEnv("metrics_path")
 	viper.SetDefault("metrics_path", "/metrics")
 
@@ -252,7 +235,7 @@ func main() {
 	viper.BindEnv("cf_exclude_zones")
 	viper.SetDefault("cf_exclude_zones", "")
 
-	flags.Int("scrape_delay", 300, "scrape delay in seconds0")
+	flags.Int("scrape_delay", 300, "scrape delay in seconds, defaults to 300")
 	viper.BindEnv("scrape_delay")
 	viper.SetDefault("scrape_delay", 300)
 
@@ -260,13 +243,13 @@ func main() {
 	viper.BindEnv("scrape_interval")
 	viper.SetDefault("scrape_interval", 60)
 
-	flags.Int("cf_batch_size", 10, "cloudflare zones batch size (1-10)")
-	viper.BindEnv("cf_batch_size")
-	viper.SetDefault("cf_batch_size", 10)
-
 	flags.Bool("free_tier", false, "scrape only metrics included in free plan")
 	viper.BindEnv("free_tier")
 	viper.SetDefault("free_tier", false)
+
+	flags.Duration("cf_timeout", 10*time.Second, "cloudflare request timeout, default 10 seconds")
+	viper.BindEnv("cf_timeout")
+	viper.SetDefault("cf_timeout", 10*time.Second)
 
 	flags.String("metrics_denylist", "", "metrics to not expose, comma delimited list")
 	viper.BindEnv("metrics_denylist")
@@ -281,5 +264,59 @@ func main() {
 	viper.SetDefault("enable_pprof", false)
 
 	viper.BindPFlags(flags)
+
+	logLevel := viper.GetString("log_level")
+	switch logLevel {
+	case "debug":
+		log.Level = logrus.DebugLevel
+		log.SetReportCaller(true)
+	case "warn":
+		log.Level = logrus.WarnLevel
+	case "error":
+		log.Level = logrus.ErrorLevel
+	default:
+		log.Level = logrus.InfoLevel
+	}
+
+	log.SetFormatter(&logrus.TextFormatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		FullTimestamp:   true,
+		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+			funcPath := strings.Split(f.File, "/")
+			file := funcPath[len(funcPath)-1]
+			return "file:" + file, " func:" + f.Function
+		},
+	})
+
+	cftimeout = viper.GetDuration("cf_timeout")
+
+	if len(viper.GetString("cf_api_token")) > 0 {
+		cfclient = cf.NewClient(
+			cfoption.WithAPIToken(viper.GetString("cf_api_token")),
+			cfoption.WithRequestTimeout(cftimeout),
+		)
+		middlewares := NewHeaderMiddleware("Authorization", "Bearer "+viper.GetString("cf_api_token"), http.DefaultTransport)
+		gqlHTTPClient := &http.Client{
+			Timeout:   cftimeout,
+			Transport: middlewares,
+		}
+		gql = NewGraphQLClient(gqlHTTPClient)
+	} else if len(viper.GetString("cf_api_email")) > 0 && len(viper.GetString("cf_api_key")) > 0 {
+		cfclient = cf.NewClient(
+			cfoption.WithAPIKey(viper.GetString("cf_api_key")),
+			cfoption.WithAPIEmail(viper.GetString("cf_api_email")),
+			cfoption.WithRequestTimeout(cftimeout),
+		)
+		authEmailHeader := NewHeaderMiddleware("X-AUTH-EMAIL", viper.GetString("cf_api_email"), http.DefaultTransport)
+		middlewares := NewHeaderMiddleware("X-AUTH-KEY", viper.GetString("cf_api_key"), authEmailHeader)
+		gqlHTTPClient := &http.Client{
+			Timeout:   cftimeout,
+			Transport: middlewares,
+		}
+		gql = NewGraphQLClient(gqlHTTPClient)
+	} else {
+		log.Fatal("Please provide CF_API_KEY+CF_API_EMAIL or CF_API_TOKEN")
+	}
+
 	cmd.Execute()
 }
