@@ -7,9 +7,9 @@ import (
 	"sync"
 
 	"github.com/biter777/countries"
-	cloudflare "github.com/cloudflare/cloudflare-go"
+	cfaccounts "github.com/cloudflare/cloudflare-go/v4/accounts"
+	cfzones "github.com/cloudflare/cloudflare-go/v4/zones"
 	"github.com/prometheus/client_golang/prometheus"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -50,6 +50,7 @@ const (
 	workerDurationMetricName                     MetricName = "cloudflare_worker_duration"
 	poolHealthStatusMetricName                   MetricName = "cloudflare_zone_pool_health_status"
 	poolRequestsTotalMetricName                  MetricName = "cloudflare_zone_pool_requests_total"
+	poolOriginHealthStatusMetricName             MetricName = "cloudflare_pool_origin_health_status"
 	logpushFailedJobsAccountMetricName           MetricName = "cloudflare_logpush_failed_jobs_account_count"
 	logpushFailedJobsZoneMetricName              MetricName = "cloudflare_logpush_failed_jobs_zone_count"
 	r2StorageTotalMetricName                     MetricName = "cloudflare_r2_storage_total_bytes"
@@ -58,6 +59,7 @@ const (
 	tunnelInfoMetricName                         MetricName = "cloudflare_tunnel_info"
 	tunnelHealthStatusMetricName                 MetricName = "cloudflare_tunnel_health_status"
 	tunnelConnectorInfoMetricName                MetricName = "cloudflare_tunnel_connector_info"
+	tunnelConnectorActiveConnectionsMetricName   MetricName = "cloudflare_tunnel_connector_active_connections"
 )
 
 type MetricsSet map[MetricName]struct{}
@@ -248,6 +250,13 @@ var (
 		[]string{"zone", "account", "load_balancer_name", "pool_name"},
 	)
 
+	poolOriginHealthStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: poolOriginHealthStatusMetricName.String(),
+		Help: "Reports the origin health of a pool, 1 for healthy, 0 for unhealthy.",
+	},
+		[]string{"account", "pool_name", "origin_name", "ip"},
+	)
+
 	poolRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: poolRequestsTotalMetricName.String(),
 		Help: "Requests per pool",
@@ -298,7 +307,12 @@ var (
 	tunnelConnectorInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: tunnelConnectorInfoMetricName.String(),
 		Help: "Reports Cloudflare Tunnel connector details",
-	}, []string{"account", "tunnel_id", "client_id", "client_version", "origin_ip"})
+	}, []string{"account", "tunnel_id", "client_id", "version", "arch", "origin_ip"})
+
+	tunnelConnectorActiveConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: tunnelConnectorActiveConnectionsMetricName.String(),
+		Help: "Reports number of active connections for a Cloudflare Tunnel connector",
+	}, []string{"account", "tunnel_id", "client_id"})
 )
 
 func buildAllMetricsSet() MetricsSet {
@@ -332,6 +346,7 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(workerCPUTimeMetricName)
 	allMetricsSet.Add(workerDurationMetricName)
 	allMetricsSet.Add(poolHealthStatusMetricName)
+	allMetricsSet.Add(poolOriginHealthStatusMetricName)
 	allMetricsSet.Add(poolRequestsTotalMetricName)
 	allMetricsSet.Add(logpushFailedJobsAccountMetricName)
 	allMetricsSet.Add(logpushFailedJobsZoneMetricName)
@@ -340,6 +355,7 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(tunnelInfoMetricName)
 	allMetricsSet.Add(tunnelHealthStatusMetricName)
 	allMetricsSet.Add(tunnelConnectorInfoMetricName)
+	allMetricsSet.Add(tunnelConnectorActiveConnectionsMetricName)
 	return allMetricsSet
 }
 
@@ -444,6 +460,9 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(poolHealthStatusMetricName) {
 		prometheus.MustRegister(poolHealthStatus)
 	}
+	if !deniedMetrics.Has(poolOriginHealthStatusMetricName) {
+		prometheus.MustRegister(poolOriginHealthStatus)
+	}
 	if !deniedMetrics.Has(poolRequestsTotalMetricName) {
 		prometheus.MustRegister(poolRequestsTotal)
 	}
@@ -471,9 +490,47 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(tunnelConnectorInfoMetricName) {
 		prometheus.MustRegister(tunnelConnectorInfo)
 	}
+	if !deniedMetrics.Has(tunnelConnectorActiveConnectionsMetricName) {
+		prometheus.MustRegister(tunnelConnectorActiveConnections)
+	}
 }
 
-func fetchWorkerAnalytics(account cloudflare.Account, wg *sync.WaitGroup) {
+func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	pools := fetchLoadblancerPools(account)
+	if pools == nil {
+		return
+	}
+
+	for _, pool := range pools {
+		if !pool.Enabled { // not enabled, no health values
+			continue
+		}
+		if pool.Monitor == "" { // No monitor, no health values
+			continue
+		}
+		for _, o := range pool.Origins {
+			if !o.Enabled { // not enabled, no health values
+				continue
+			}
+			healthy := 1 // Assume healthy
+			if o.JSON.ExtraFields["healthy"].Raw() == "false" {
+				healthy = 0 // Unhealthy
+			}
+			poolOriginHealthStatus.With(
+				prometheus.Labels{
+					"account":     account.Name,
+					"pool_name":   pool.Name,
+					"origin_name": o.Name,
+					"ip":          o.Address,
+				}).Set(float64(healthy))
+		}
+	}
+}
+
+func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -502,7 +559,7 @@ func fetchWorkerAnalytics(account cloudflare.Account, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchLogpushAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
+func fetchLogpushAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -527,7 +584,7 @@ func fetchLogpushAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGr
 	}
 }
 
-func fetchR2StorageForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
+func fetchR2StorageForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -549,7 +606,7 @@ func fetchR2StorageForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchLogpushAnalyticsForZone(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchLogpushAnalyticsForZone(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -557,7 +614,7 @@ func fetchLogpushAnalyticsForZone(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -578,7 +635,7 @@ func fetchLogpushAnalyticsForZone(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchZoneColocationAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchZoneColocationAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -587,7 +644,7 @@ func fetchZoneColocationAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -608,7 +665,7 @@ func fetchZoneColocationAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 	}
 }
 
-func fetchZoneAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchZoneAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -617,7 +674,7 @@ func fetchZoneAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -760,7 +817,7 @@ func addHTTPAdaptiveGroups(z *zoneResp, name string, account string) {
 	}
 }
 
-func fetchLoadBalancerAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
+func fetchLoadBalancerAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -769,7 +826,7 @@ func fetchLoadBalancerAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		return
 	}
 
-	zoneIDs := extractZoneIDs(filterNonFreePlanZones(zones))
+	zoneIDs := extractZoneIDs(zones)
 	if len(zoneIDs) == 0 {
 		return
 	}
@@ -814,50 +871,56 @@ func addLoadBalancingRequestsAdaptive(z *lbResp, name string, account string) {
 	}
 }
 
-func fetchZeroTrustAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
+func fetchZeroTrustAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
 	addCloudflareTunnelStatus(account)
 }
 
-func addCloudflareTunnelStatus(account cloudflare.Account) {
-	tunnels := fetchCloudflareTunnels(account.ID)
+func addCloudflareTunnelStatus(account cfaccounts.Account) {
+	tunnels := fetchCloudflareTunnels(account)
 	for _, t := range tunnels {
 		tunnelInfo.With(
 			prometheus.Labels{
 				"account":     account.Name,
 				"tunnel_id":   t.ID,
 				"tunnel_name": t.Name,
-				"tunnel_type": t.TunnelType,
+				"tunnel_type": string(t.TunType),
 			}).Set(float64(1))
 
 		tunnelHealthStatus.With(
 			prometheus.Labels{
 				"account":   account.Name,
 				"tunnel_id": t.ID,
-			}).Set(float64(getCloudflareTunnelStatusValue(t.Status)))
+			}).Set(float64(getCloudflareTunnelStatusValue(string(t.Status))))
 
 		// Each client/connector can open many connections to the Cloudflare edge,
 		// we opt to not expose metrics for each individual connection. We do expose
 		// an informational metric for each client/connector however.
-		connections := fetchCloudflareTunnelConnections(account.ID, t.ID)
-		for _, tc := range connections {
-			clients := make(map[string]struct{})
-			for _, c := range tc.Connections {
-				if _, exists := clients[c.ClientID]; !exists {
-					clients[c.ClientID] = struct{}{}
-
-					tunnelConnectorInfo.With(
-						prometheus.Labels{
-							"account":        account.Name,
-							"tunnel_id":      t.ID,
-							"client_id":      c.ClientID,
-							"client_version": c.ClientVersion,
-							"origin_ip":      c.OriginIP,
-						}).Set(float64(1))
-				}
+		clients := fetchCloudflareTunnelConnectors(account, t.ID)
+		for _, c := range clients {
+			originIP := ""
+			if len(c.Conns) > 0 {
+				originIP = c.Conns[0].OriginIP
 			}
+
+			tunnelConnectorInfo.With(
+				prometheus.Labels{
+					"account":   account.Name,
+					"tunnel_id": t.ID,
+					"client_id": c.ID,
+					"version":   c.Version,
+					"arch":      c.Arch,
+					"origin_ip": originIP,
+				}).Set(float64(1))
+
+			tunnelConnectorActiveConnections.With(
+				prometheus.Labels{
+					"account":   account.Name,
+					"tunnel_id": t.ID,
+					"client_id": c.ID,
+				}).Set(float64(len(c.Conns)))
 		}
 	}
 }
