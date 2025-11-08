@@ -35,6 +35,7 @@ Required authentication scopes:
 - `Zone/Firewall Services:Read` is required to fetch zone rule name for `cloudflare_zone_firewall_events_count` metric
 - `Account/Account Rulesets:Read` is required to fetch account rule name for `cloudflare_zone_firewall_events_count` metric
 - `Account:Load Balancing: Monitors and Pools:Read` is required to fetch pools origin health status `cloudflare_pool_origin_health_status` metric
+- `Cloudflare Tunnel Read` is required to fetch Cloudflare Tunnel (Cloudflare Zero Trust) metrics
 
 To authenticate this way, only set `CF_API_TOKEN` (omit `CF_API_EMAIL` and `CF_API_KEY`)
 

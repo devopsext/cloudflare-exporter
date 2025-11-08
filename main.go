@@ -112,6 +112,7 @@ func fetchMetrics() {
 		go fetchLogpushAnalyticsForAccount(a, &wg)
 		go fetchR2StorageForAccount(a, &wg)
 		go fetchLoadblancerPoolsHealth(a, &wg)
+		go fetchZeroTrustAnalyticsForAccount(a, &wg)
 	}
 
 	zones := fetchZones(accounts)
