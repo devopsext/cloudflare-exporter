@@ -13,6 +13,7 @@ sleep 5
 
 # Get metrics
 curl -s -o /tmp/cloudflare_exporter_test_output http://${baseUrl}${metricsPath}
+sleep 3
 
 # Run Tests
 venom run tests/basic_tests.yml
