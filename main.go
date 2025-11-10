@@ -108,10 +108,19 @@ func fetchMetrics() {
 	accounts := fetchAccounts()
 
 	for _, a := range accounts {
+		wg.Add(1)
 		go fetchWorkerAnalytics(a, &wg)
+
+		wg.Add(1)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
+
+		wg.Add(1)
 		go fetchR2StorageForAccount(a, &wg)
+
+		wg.Add(1)
 		go fetchLoadblancerPoolsHealth(a, &wg)
+
+		wg.Add(1)
 		go fetchZeroTrustAnalyticsForAccount(a, &wg)
 	}
 
@@ -126,9 +135,16 @@ func fetchMetrics() {
 
 	zoneCount := len(filteredZones)
 	if zoneCount > 0 && zoneCount <= cfgraphqlreqlimit {
+		wg.Add(1)
 		go fetchZoneAnalytics(filteredZones, &wg)
+
+		wg.Add(1)
 		go fetchZoneColocationAnalytics(filteredZones, &wg)
+
+		wg.Add(1)
 		go fetchLoadBalancerAnalytics(filteredZones, &wg)
+
+		wg.Add(1)
 		go fetchLogpushAnalyticsForZone(filteredZones, &wg)
 	} else if zoneCount > cfgraphqlreqlimit {
 		for s := 0; s < zoneCount; s += cfgraphqlreqlimit {
@@ -136,9 +152,16 @@ func fetchMetrics() {
 			if e > zoneCount {
 				e = zoneCount
 			}
+			wg.Add(1)
 			go fetchZoneAnalytics(filteredZones[s:e], &wg)
+
+			wg.Add(1)
 			go fetchZoneColocationAnalytics(filteredZones[s:e], &wg)
+
+			wg.Add(1)
 			go fetchLoadBalancerAnalytics(filteredZones[s:e], &wg)
+
+			wg.Add(1)
 			go fetchLogpushAnalyticsForZone(filteredZones[s:e], &wg)
 		}
 	}

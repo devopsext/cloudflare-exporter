@@ -496,7 +496,6 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 }
 
 func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	pools := fetchLoadblancerPools(account)
@@ -531,7 +530,6 @@ func fetchLoadblancerPoolsHealth(account cfaccounts.Account, wg *sync.WaitGroup)
 }
 
 func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	r, err := fetchWorkerTotals(account.ID)
@@ -560,7 +558,6 @@ func fetchWorkerAnalytics(account cfaccounts.Account, wg *sync.WaitGroup) {
 }
 
 func fetchLogpushAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	if viper.GetBool("free_tier") {
@@ -585,7 +582,6 @@ func fetchLogpushAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGr
 }
 
 func fetchR2StorageForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	r, err := fetchR2Account(account.ID)
@@ -607,7 +603,6 @@ func fetchR2StorageForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
 }
 
 func fetchLogpushAnalyticsForZone(zones []cfzones.Zone, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	if viper.GetBool("free_tier") {
@@ -636,7 +631,6 @@ func fetchLogpushAnalyticsForZone(zones []cfzones.Zone, wg *sync.WaitGroup) {
 }
 
 func fetchZoneColocationAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	// Colocation metrics are not available in non-enterprise zones
@@ -666,7 +660,6 @@ func fetchZoneColocationAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 }
 
 func fetchZoneAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	// None of the below referenced metrics are available in the free tier
@@ -818,7 +811,6 @@ func addHTTPAdaptiveGroups(z *zoneResp, name string, account string) {
 }
 
 func fetchLoadBalancerAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	// None of the below referenced metrics are available in the free tier
@@ -872,7 +864,6 @@ func addLoadBalancingRequestsAdaptive(z *lbResp, name string, account string) {
 }
 
 func fetchZeroTrustAnalyticsForAccount(account cfaccounts.Account, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	addCloudflareTunnelStatus(account)
