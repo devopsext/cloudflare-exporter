@@ -12,7 +12,7 @@ Please provide a brief description of the changes in this PR.
 - [ ] Other (please describe):
 
 ### Testing
-- [ ] I have run `make release-tests` and all tests pass
+- [ ] I have run `make pr-tests` and all tests pass
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
 
@@ -27,7 +27,7 @@ Please ensure you have completed the following before submitting your PR:
 
 ```bash
 # Run comprehensive tests
-make release-tests
+make pr-tests
 ```
 
 If the above command fails, please fix the issues before submitting your PR.
