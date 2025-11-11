@@ -702,6 +702,25 @@ func addHTTPGroups(z *zoneResp, name string, account string) {
 		return
 	}
 
+	// Clear stale series for this zone/account
+	label := prometheus.Labels{"zone": name, "account": account}
+	zoneRequestTotal.DeletePartialMatch(label)
+	zoneRequestCached.DeletePartialMatch(label)
+	zoneRequestSSLEncrypted.DeletePartialMatch(label)
+	zoneRequestContentType.DeletePartialMatch(label)
+	zoneBandwidthContentType.DeletePartialMatch(label)
+	zoneRequestCountry.DeletePartialMatch(label)
+	zoneBandwidthCountry.DeletePartialMatch(label)
+	zoneThreatsCountry.DeletePartialMatch(label)
+	zoneRequestHTTPStatus.DeletePartialMatch(label)
+	zoneRequestBrowserMap.DeletePartialMatch(label)
+	zoneBandwidthTotal.DeletePartialMatch(label)
+	zoneBandwidthCached.DeletePartialMatch(label)
+	zoneBandwidthSSLEncrypted.DeletePartialMatch(label)
+	zoneThreatsTotal.DeletePartialMatch(label)
+	zonePageviewsTotal.DeletePartialMatch(label)
+	zoneUniquesTotal.DeletePartialMatch(label)
+
 	zt := z.HTTP1mGroups[0]
 
 	zoneRequestTotal.With(prometheus.Labels{"zone": name, "account": account}).Add(float64(zt.Sum.Requests))
@@ -751,6 +770,11 @@ func addFirewallGroups(z *zoneResp, name string, account string) {
 	if len(z.FirewallEventsAdaptiveGroups) == 0 {
 		return
 	}
+
+	// Clear stale series for this zone/account
+	label := prometheus.Labels{"zone": name, "account": account}
+	zoneFirewallEventsCount.DeletePartialMatch(label)
+
 	rulesMap := fetchFirewallRules(z.ZoneTag)
 	for _, g := range z.FirewallEventsAdaptiveGroups {
 		zoneFirewallEventsCount.With(
@@ -780,6 +804,10 @@ func addHealthCheckGroups(z *zoneResp, name string, account string) {
 		return
 	}
 
+	// Clear stale series for this zone/account
+	label := prometheus.Labels{"zone": name, "account": account}
+	zoneHealthCheckEventsOriginCount.DeletePartialMatch(label)
+
 	for _, g := range z.HealthCheckEventsAdaptiveGroups {
 		zoneHealthCheckEventsOriginCount.With(
 			prometheus.Labels{
@@ -794,6 +822,11 @@ func addHealthCheckGroups(z *zoneResp, name string, account string) {
 }
 
 func addHTTPAdaptiveGroups(z *zoneResp, name string, account string) {
+	// Clear stale series for this zone/account
+	label := prometheus.Labels{"zone": name, "account": account}
+	zoneRequestOriginStatusCountryHost.DeletePartialMatch(label)
+	zoneRequestStatusCountryHost.DeletePartialMatch(label)
+
 	for _, g := range z.HTTPRequestsAdaptiveGroups {
 		zoneRequestOriginStatusCountryHost.With(
 			prometheus.Labels{
@@ -845,6 +878,10 @@ func fetchLoadBalancerAnalytics(zones []cfzones.Zone, wg *sync.WaitGroup) {
 }
 
 func addLoadBalancingRequestsAdaptiveGroups(z *lbResp, name string, account string) {
+	// Clear stale series for this zone/account
+	label := prometheus.Labels{"zone": name, "account": account}
+	poolRequestsTotal.DeletePartialMatch(label)
+
 	for _, g := range z.LoadBalancingRequestsAdaptiveGroups {
 		poolRequestsTotal.With(
 			prometheus.Labels{
@@ -858,6 +895,10 @@ func addLoadBalancingRequestsAdaptiveGroups(z *lbResp, name string, account stri
 }
 
 func addLoadBalancingRequestsAdaptive(z *lbResp, name string, account string) {
+	// Clear stale series for this zone/account
+	label := prometheus.Labels{"zone": name, "account": account}
+	poolHealthStatus.DeletePartialMatch(label)
+
 	for _, g := range z.LoadBalancingRequestsAdaptive {
 		for _, p := range g.Pools {
 			poolHealthStatus.With(
