@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+      - 'cloudflare-exporter-[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
   build-and-push-docker-image:
@@ -18,6 +19,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          # Strip 'cloudflare-exporter-' prefix if present
+          VERSION="${TAG#cloudflare-exporter-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: $VERSION"
 
       - name: Login to Github Packages
         uses: docker/login-action@v3
@@ -39,7 +49,7 @@ jobs:
       - name: Build and push
         id: publish-image
         env:
-          IMAGE_VERSION: ${{ github.ref_name }}
+          IMAGE_VERSION: ${{ steps.version.outputs.version }}
           KO_DOCKER_REPO: "ghcr.io/${{ github.repository }}"
         run: |
           ko build . --sbom=none --image-refs ./image-digest --bare --platform linux/arm64,linux/amd64 -t ${IMAGE_VERSION} \
@@ -80,9 +90,20 @@ jobs:
     permissions:
       packages: read
     steps:
+      # Extract version again since this job runs on a different runner
+      # and doesn't have access to outputs from the previous job's steps
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          # Strip 'cloudflare-exporter-' prefix if present
+          VERSION="${TAG#cloudflare-exporter-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: $VERSION"
+
       - name: Copy image to dockerhub
         env:
-          IMAGE_VERSION: ${{ github.ref_name }}
+          IMAGE_VERSION: ${{ steps.version.outputs.version }}
           GHCR_REPO: "ghcr.io/${{ github.repository }}"
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
